@@ -1,0 +1,42 @@
+{"properties": [
+  {
+    "name": "spring.teacher-datasource.password",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.teacher-datasource.password'"
+  },
+  {
+    "name": "spring.admin-datasource.username",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.admin-datasource.username'"
+  },
+  {
+    "name": "spring.admin-datasource.driver-class-name",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.admin-datasource.driver-class-name'"
+  },
+  {
+    "name": "spring.teacher-datasource.driver-class-name",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.teacher-datasource.driver-class-name'"
+  },
+  {
+    "name": "spring.teacher-datasource.jdbc-url",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.teacher-datasource.jdbc-url'"
+  },
+  {
+    "name": "spring.teacher-datasource.username",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.teacher-datasource.username'"
+  },
+  {
+    "name": "spring.admin-datasource.jdbc-url",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.admin-datasource.jdbc-url'"
+  },
+  {
+    "name": "spring.admin-datasource.password",
+    "type": "java.lang.String",
+    "description": "A description for 'spring.admin-datasource.password'"
+  }
+]}

@@ -1,0 +1,25 @@
+CREATE TABLE IF NOT EXISTS tests (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    duration INT NOT NULL,
+    createdBy BIGINT NOT NULL
+    -- , FOREIGN KEY (createdBy) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    test_id BIGINT NOT NULL,
+    description TEXT NOT NULL,
+    marks INT NOT NULL,
+    FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS test_cases (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    question_id BIGINT NOT NULL,
+    input_data TEXT NOT NULL,
+    expected_output TEXT NOT NULL,
+    example_case BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+);
+
