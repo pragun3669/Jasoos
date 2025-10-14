@@ -4,9 +4,7 @@ import {
   Play, 
   Save, 
   RotateCcw, 
-  Settings, 
-  ChevronDown, 
-  Plus,
+  ChevronDown,
   Terminal,
   CheckCircle,
   XCircle,
@@ -14,38 +12,39 @@ import {
   X
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const CodeEditor = ({ test, selectedQuestionIndex = 0, onClose }) => {
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const token = user?.token;
   const editorRef = useRef(null);
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(selectedQuestionIndex);
-  const [selectedLanguage, setSelectedLanguage] = useState('javascript');
+  const [selectedLanguage, setSelectedLanguage] = useState('python');
   const [code, setCode] = useState('');
   const [activeTab, setActiveTab] = useState('testcase');
   const [testCases, setTestCases] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState(null);
+  const [submissionId, setSubmissionId] = useState(null);
+  const [submissionStatus, setSubmissionStatus] = useState('pending');
+  const [compilerOutput, setCompilerOutput] = useState('');
+  const [testResults, setTestResults] = useState([]);
 
   const languages = [
-    { id: 'javascript', name: 'JavaScript', extension: 'js' },
     { id: 'python', name: 'Python', extension: 'py' },
     { id: 'java', name: 'Java', extension: 'java' },
-    { id: 'cpp', name: 'C++', extension: 'cpp' },
-    { id: 'c', name: 'C', extension: 'c' },
-    { id: 'csharp', name: 'C#', extension: 'cs' },
-    { id: 'go', name: 'Go', extension: 'go' },
-    { id: 'rust', name: 'Rust', extension: 'rs' }
+    { id: 'cpp', name: 'C++', extension: 'cpp' }
   ];
 
   useEffect(() => {
     if (test && test.questions && test.questions.length > 0) {
       const question = test.questions[currentQuestionIndex];
-      const language = question.language || 'javascript';
+      const language = question.language || 'python';
       setSelectedLanguage(language);
       setCode(getDefaultCode(language));
       
-      // Convert backend test cases to frontend format
       const formattedTestCases = question.testCases?.map((tc, index) => ({
         id: index + 1,
         input: tc.inputData || '',
@@ -55,19 +54,16 @@ const CodeEditor = ({ test, selectedQuestionIndex = 0, onClose }) => {
       })) || [];
       
       setTestCases(formattedTestCases);
+      setResults(null);
+      setSubmissionId(null);
+      setSubmissionStatus('pending');
+      setCompilerOutput('');
+      setTestResults([]);
     }
   }, [test, currentQuestionIndex]);
 
   function getDefaultCode(language) {
     const templates = {
-      javascript: `/**
- * @param {string} input
- * @return {string}
- */
-function solution(input) {
-    // Your code here
-    
-}`,
       python: `def solution(input_data):
     """
     Your solution here
@@ -89,38 +85,9 @@ public:
         // Your code here
         
     }
-};`,
-      c: `#include <stdio.h>
-#include <string.h>
-
-char* solution(char* input) {
-    // Your code here
-    
-}`,
-      csharp: `using System;
-
-public class Solution {
-    public string Solution(string input) {
-        // Your code here
-        
-    }
-}`,
-      go: `package main
-
-import "fmt"
-
-func solution(input string) string {
-    // Your code here
-    
-}`,
-      rust: `impl Solution {
-    pub fn solution(input: String) -> String {
-        // Your code here
-        
-    }
-}`
+};`
     };
-    return templates[language] || templates.javascript;
+    return templates[language] || templates.python;
   }
 
   const handleLanguageChange = (language) => {
@@ -131,7 +98,6 @@ func solution(input string) string {
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
     
-    // Configure Monaco themes
     monaco.editor.defineTheme('jasoos-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -173,34 +139,151 @@ func solution(input string) string {
     });
   };
 
-  const handleRunCode = async () => {
+  const handleRunCode = async (runAll = false) => {
+    if (!user) {
+      setCompilerOutput('⚠️ Error: Please login first to run code.');
+      return;
+    }
+
+    if (!test?.id || !user?.id || !token) {
+      setCompilerOutput('⚠️ Error: Missing test ID, user ID, or token.');
+      return;
+    }
+
     setIsRunning(true);
-    // Simulate code execution
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setResults({
-      status: 'success',
-      runtime: '52 ms',
-      memory: '14.2 MB',
-      testsPassed: testCases.length,
-      totalTests: testCases.length,
-      output: testCases[0]?.output || 'No output'
-    });
-    setIsRunning(false);
     setActiveTab('result');
+    setCompilerOutput(runAll ? '🔄 Submitting all test cases...\n' : '🔄 Running example test cases...\n');
+    setTestResults([]);
+
+    try {
+      const question = test.questions[currentQuestionIndex];
+      if (!question) throw new Error('Question data missing');
+
+      const extMap = { python: 'py', java: 'java', cpp: 'cpp' };
+      const filename = `Solution.${extMap[selectedLanguage] || 'txt'}`;
+
+      const body = {
+        language: selectedLanguage,
+        source: code,
+        filename: filename,
+        stdin: '',
+        questionId: question.id,
+        studentId: user.id
+      };
+
+      const submissionResp = await fetch(
+        `http://localhost:8081/api/submissions?testId=${test.id}&studentId=${user.id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(body)
+        }
+      );
+
+      if (!submissionResp.ok) {
+        const text = await submissionResp.text();
+        throw new Error(`Submission failed: ${submissionResp.status} ${text}`);
+      }
+
+      const submissionData = await submissionResp.json();
+      const subId = submissionData.id || submissionData.submissionId;
+      if (!subId) throw new Error('Submission ID missing from response');
+
+      setSubmissionId(subId);
+      setSubmissionStatus('running');
+      setCompilerOutput('✓ Code submitted successfully\n🔄 Waiting for results...\n');
+
+      let status = 'PENDING';
+      let attempts = 0;
+      while ((status === 'PENDING' || status === 'RUNNING') && attempts < 60) {
+        await new Promise(res => setTimeout(res, 1000));
+        const statusResp = await fetch(`http://localhost:8081/api/submissions/${subId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!statusResp.ok) throw new Error('Failed to fetch submission status');
+        const statusData = await statusResp.json();
+        status = statusData.status;
+        setSubmissionStatus(status);
+        attempts++;
+      }
+
+      const resultsResp = await fetch(`http://localhost:8081/api/submissions/${subId}/results`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!resultsResp.ok) throw new Error('Failed to fetch results');
+
+      const apiResults = await resultsResp.json();
+      
+      const formattedResults = apiResults.map((r, idx) => ({
+        testCaseNumber: idx + 1,
+        status: r.status === 'AC' ? 'pass' : 'fail',
+        input: testCases[idx]?.input || 'N/A',
+        expectedOutput: testCases[idx]?.output || 'N/A',
+        actualOutput: r.stdout || '',
+        stderr: r.stderr || '',
+        isExample: testCases[idx]?.isExample || false
+      }));
+
+      setTestResults(formattedResults);
+
+      const passed = formattedResults.filter(r => r.status === 'pass').length;
+      const total = formattedResults.length;
+
+      let output = '═══════════════════════════════════════════════\n';
+      output += `  TEST RESULTS: ${passed}/${total} Test Cases Passed\n`;
+      output += '═══════════════════════════════════════════════\n\n';
+
+      formattedResults.forEach((r) => {
+        if (r.status === 'pass') {
+          output += `✅ Test Case ${r.testCaseNumber}: PASSED\n`;
+          output += `   Input: ${r.input}\n`;
+          output += `   Output: ${r.actualOutput}\n\n`;
+        } else {
+          output += `❌ Test Case ${r.testCaseNumber}: FAILED\n`;
+          output += `   Input: ${r.input}\n`;
+          output += `   Expected: ${r.expectedOutput}\n`;
+          output += `   Got: ${r.actualOutput}\n`;
+          if (r.stderr) output += `   Error: ${r.stderr}\n`;
+          output += '\n';
+        }
+      });
+
+      setCompilerOutput(output);
+
+      setResults({
+        status: passed === total ? 'success' : 'error',
+        runtime: '52 ms',
+        memory: '14.2 MB',
+        testsPassed: passed,
+        totalTests: total,
+        output: formattedResults[0]?.actualOutput || 'No output'
+      });
+
+    } catch (err) {
+      console.error(err);
+      setCompilerOutput(`⚠️ ERROR: ${err.message}\n\nCheck your code and try again.`);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const handleSave = () => {
-    localStorage.setItem('jasoos-code', JSON.stringify({
+    const saved = {
       language: selectedLanguage,
       code: code,
       questionIndex: currentQuestionIndex
-    }));
-    alert('Code saved successfully!');
+    };
+    localStorage.setItem('jasoos-code', JSON.stringify(saved));
+    setCompilerOutput('✓ Code saved successfully to local storage.\n');
   };
 
   const handleReset = () => {
     setCode(getDefaultCode(selectedLanguage));
+    setCompilerOutput('✓ Code reset to default template.\n');
   };
 
   const handleQuestionChange = (index) => {
@@ -222,7 +305,6 @@ func solution(input string) string {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      {/* Header with Close Button */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
@@ -250,7 +332,6 @@ func solution(input string) string {
       </div>
 
       <div className="max-w-7xl mx-auto p-4">
-        {/* Question Navigation */}
         {test.questions.length > 1 && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg mb-4 p-4">
             <div className="flex items-center space-x-2 overflow-x-auto">
@@ -275,7 +356,6 @@ func solution(input string) string {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Problem Description */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
             <div className="mb-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -316,15 +396,12 @@ func solution(input string) string {
             </div>
           </div>
 
-          {/* Code Editor */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-            {/* Editor Header */}
             <div className="border-b border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <span className="text-lg font-semibold text-gray-900 dark:text-white">Code</span>
                   
-                  {/* Language Selector */}
                   <div className="relative">
                     <select
                       value={selectedLanguage}
@@ -339,7 +416,6 @@ func solution(input string) string {
                   </div>
                 </div>
 
-                {/* Editor Actions */}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={handleSave}
@@ -359,7 +435,6 @@ func solution(input string) string {
               </div>
             </div>
 
-            {/* Monaco Editor */}
             <div className="h-96">
               <Editor
                 height="100%"
@@ -381,15 +456,14 @@ func solution(input string) string {
               />
             </div>
 
-            {/* Editor Footer */}
             <div className="border-t border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Saved • Ln 1, Col 1
+                  Status: {submissionStatus}
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={handleRunCode}
+                    onClick={() => handleRunCode(false)}
                     disabled={isRunning}
                     className="bg-green-400 hover:bg-green-500 disabled:opacity-50 text-black font-semibold px-4 py-2 rounded-lg transition-all hover:scale-105 disabled:hover:scale-100 flex items-center"
                   >
@@ -405,7 +479,11 @@ func solution(input string) string {
                       </>
                     )}
                   </button>
-                  <button className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold px-4 py-2 rounded-lg transition-all hover:scale-105">
+                  <button
+                    onClick={() => handleRunCode(true)}
+                    disabled={isRunning}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-lg transition-all hover:scale-105 disabled:hover:scale-100"
+                  >
                     Submit
                   </button>
                 </div>
@@ -414,9 +492,7 @@ func solution(input string) string {
           </div>
         </div>
 
-        {/* Test Cases and Results */}
         <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-          {/* Tabs */}
           <div className="border-b border-gray-200 dark:border-gray-700">
             <div className="flex">
               <button
@@ -443,13 +519,11 @@ func solution(input string) string {
             </div>
           </div>
 
-          {/* Tab Content */}
           <div className="p-4">
             {activeTab === 'testcase' && (
               <div>
-                {/* Test Case Tabs */}
                 <div className="flex items-center space-x-2 mb-4 overflow-x-auto">
-                  {testCases.map((testCase, index) => (
+                  {testCases.filter(tc => tc.isExample).map((testCase, index) => (
                     <button
                       key={testCase.id}
                       onClick={() => setTestCases(testCases.map(tc => ({ ...tc, active: tc.id === testCase.id })))}
@@ -460,15 +534,12 @@ func solution(input string) string {
                       }`}
                     >
                       Case {index + 1}
-                      {testCase.isExample && (
-                        <span className="ml-1 text-xs bg-blue-500 text-white px-1 rounded">Ex</span>
-                      )}
+                      <span className="ml-1 text-xs bg-blue-500 text-white px-1 rounded">Ex</span>
                     </button>
                   ))}
                 </div>
 
-                {/* Active Test Case */}
-                {testCases.filter(tc => tc.active).map(testCase => (
+                {testCases.filter(tc => tc.active && tc.isExample).map(testCase => (
                   <div key={testCase.id} className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -493,49 +564,89 @@ func solution(input string) string {
 
             {activeTab === 'result' && (
               <div>
-                {results ? (
+                {testResults.length > 0 ? (
                   <div className="space-y-4">
-                    {/* Status */}
-                    <div className="flex items-center space-x-2">
-                      {results.status === 'success' ? (
-                        <CheckCircle className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <XCircle className="w-5 h-5 text-red-500" />
-                      )}
-                      <span className={`font-semibold ${
-                        results.status === 'success' ? 'text-green-500' : 'text-red-500'
-                      }`}>
-                        {results.status === 'success' ? 'Accepted' : 'Wrong Answer'}
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Test Cases Results
+                      </h3>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {testResults.filter(r => r.status === 'pass').length}/{testResults.length} Passed
                       </span>
                     </div>
 
-                    {/* Stats */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Runtime</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">{results.runtime}</div>
-                      </div>
-                      <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Memory</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">{results.memory}</div>
-                      </div>
-                      <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Test Cases</div>
-                        <div className="font-semibold text-gray-900 dark:text-white">
-                          {results.testsPassed}/{results.totalTests}
+                    {testResults.filter(r => r.isExample).map((result) => (
+                      <div
+                        key={result.testCaseNumber}
+                        className={`p-4 rounded-lg border-2 ${
+                          result.status === 'pass'
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-500'
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-500'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            {result.status === 'pass' ? (
+                              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                            ) : (
+                              <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                            )}
+                            <span className={`font-semibold ${
+                              result.status === 'pass'
+                                ? 'text-green-700 dark:text-green-300'
+                                : 'text-red-700 dark:text-red-300'
+                            }`}>
+                              Test Case {result.testCaseNumber}
+                            </span>
+                          </div>
+                          <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded">
+                            Example
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-2 text-sm">
+                          <div>
+                            <strong className="text-gray-700 dark:text-gray-300">Input:</strong>
+                            <code className="ml-2 text-gray-900 dark:text-gray-100">
+                              {result.input}
+                            </code>
+                          </div>
+                          <div>
+                            <strong className="text-gray-700 dark:text-gray-300">Expected:</strong>
+                            <code className="ml-2 text-gray-900 dark:text-gray-100">
+                              {result.expectedOutput}
+                            </code>
+                          </div>
+                          <div>
+                            <strong className="text-gray-700 dark:text-gray-300">Your Output:</strong>
+                            <code className={`ml-2 ${
+                              result.status === 'pass'
+                                ? 'text-green-700 dark:text-green-300'
+                                : 'text-red-700 dark:text-red-300'
+                            }`}>
+                              {result.actualOutput || 'No output'}
+                            </code>
+                          </div>
+                          {result.stderr && (
+                            <div>
+                              <strong className="text-red-600 dark:text-red-400">Error:</strong>
+                              <code className="ml-2 text-red-600 dark:text-red-400">
+                                {result.stderr}
+                              </code>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    ))}
 
-                    {/* Output */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Output:
-                      </label>
-                      <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg font-mono text-sm text-gray-900 dark:text-white">
-                        {results.output}
+                    {testResults.filter(r => !r.isExample).length > 0 && (
+                      <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {testResults.filter(r => !r.isExample && r.status === 'pass').length}/
+                          {testResults.filter(r => !r.isExample).length} hidden test cases passed
+                        </p>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -547,6 +658,26 @@ func solution(input string) string {
             )}
           </div>
         </div>
+
+        {compilerOutput && (
+          <div className="mt-4 bg-black rounded-lg shadow-lg overflow-hidden">
+            <div className="p-3 bg-gray-900 border-b border-gray-700 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Terminal className="w-4 h-4 text-green-400" />
+                <span className="text-sm font-medium text-green-400">Console Output</span>
+              </div>
+              <button
+                onClick={() => setCompilerOutput('')}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 font-mono text-sm text-green-400 whitespace-pre-wrap max-h-64 overflow-auto">
+              {compilerOutput}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

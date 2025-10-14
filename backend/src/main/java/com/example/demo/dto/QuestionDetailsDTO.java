@@ -1,8 +1,12 @@
 package com.example.demo.dto;
 
+import lombok.Getter;
+
 import java.util.List;
 
+@Getter
 public class QuestionDetailsDTO {
+    // Getters
     private Long id;
     private String description;
     private Integer marks;
@@ -15,9 +19,4 @@ public class QuestionDetailsDTO {
         this.testCases = testCases;
     }
 
-    // Getters
-    public Long getId() { return id; }
-    public String getDescription() { return description; }
-    public Integer getMarks() { return marks; }
-    public List<TestCaseDetailsDTO> getTestCases() { return testCases; }
 }

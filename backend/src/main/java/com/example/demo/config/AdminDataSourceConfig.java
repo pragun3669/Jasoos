@@ -18,7 +18,6 @@ import java.util.Map;
 
 @Configuration
 @EnableJpaRepositories(
-        // The ref names must match the bean names below
         basePackages = "com.example.demo.repository.admin",
         entityManagerFactoryRef = "adminEntityManagerFactory",
         transactionManagerRef = "adminTransactionManager"
@@ -45,10 +44,12 @@ public class AdminDataSourceConfig {
 
         // This correctly applies settings like ddl-auto and show-sql from application.properties
         Map<String, String> properties = jpaProperties.getProperties();
+        properties.put("hibernate.hbm2ddl.auto", "update");
 
         return builder
                 .dataSource(dataSource)
-                .packages("com.example.demo.entity") // Scan for @Entity classes
+                // FIX: Use the correct package name, not a class name
+                .packages("com.example.demo.entity.admin")
                 .persistenceUnit("admin")
                 .properties(properties)
                 .build();

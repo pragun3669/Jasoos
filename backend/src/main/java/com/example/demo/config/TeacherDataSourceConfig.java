@@ -1,5 +1,10 @@
 package com.example.demo.config;
 
+// Import the specific entities this configuration will manage
+import com.example.demo.entity.teacher.Submission;
+import com.example.demo.entity.teacher.SubmissionResult;
+import com.example.demo.entity.teacher.Teacher;
+
 import jakarta.persistence.EntityManagerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
@@ -44,12 +49,14 @@ public class TeacherDataSourceConfig {
             EntityManagerFactoryBuilder builder,
             @Qualifier("teacherDataSource") DataSource dataSource) {
 
-        // This correctly applies settings like ddl-auto and show-sql
+
         Map<String, String> properties = jpaProperties.getProperties();
+        properties.put("hibernate.hbm2ddl.auto", "update");
 
         return builder
                 .dataSource(dataSource)
-                .packages("com.example.demo.entity")
+                // 👇 Scan entire teacher entity package
+                .packages("com.example.demo.entity.teacher")
                 .persistenceUnit("teacher")
                 .properties(properties)
                 .build();

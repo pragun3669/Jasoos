@@ -2,7 +2,7 @@ package com.example.demo.controller;
 
 import com.example.demo.dto.LoginDTO;
 import com.example.demo.dto.SignupDTO;
-import com.example.demo.entity.Teacher;
+import com.example.demo.entity.teacher.Teacher;
 import com.example.demo.service.AuthService;
 import com.example.demo.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;

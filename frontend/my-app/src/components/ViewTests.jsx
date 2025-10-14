@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import {
   Eye,
   Edit,
@@ -14,7 +13,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import TestPreviewModal from './TestPreviewModal';
 import CodeEditor from './CodeEditor';
-const ViewTests = () => {
+
+const ViewTests = ({ onNavigate }) => {
   const { user } = useAuth();
   const token = user?.token;
 
@@ -23,18 +23,21 @@ const ViewTests = () => {
   const [selectedTest, setSelectedTest] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [openEditorTest, setOpenEditorTest] = useState(null); // <-- for same-page editor
+  const [openEditorTest, setOpenEditorTest] = useState(null);
+
   useEffect(() => {
     const fetchTests = async () => {
       if (!user || !token) return;
       try {
-        const res = await axios.get(
+        const res = await fetch(
           `http://localhost:8081/api/tests/teacher/${user.id}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        setTests(res.data);
+        if (!res.ok) throw new Error('Failed to fetch tests');
+        const data = await res.json();
+        setTests(data);
       } catch (err) {
-        console.error('Fetch tests error:', err.response || err);
+        console.error('Fetch tests error:', err);
         alert('Failed to fetch tests');
       } finally {
         setLoading(false);
@@ -62,6 +65,27 @@ const ViewTests = () => {
         return 'bg-gray-500 text-white';
     }
   };
+  const handleDeleteTest = async (testId) => {
+    if (!window.confirm("Are you sure you want to delete this test?")) return;
+  
+    try {
+      const res=await fetch(`http://localhost:8081/api/tests/${testId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+  
+  
+      if (!res.ok) throw new Error("Failed to delete test");
+  
+      // Remove test from state
+      setTests((prev) => prev.filter((t) => t.id !== testId));
+      alert("Test deleted successfully");
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting test");
+    }
+  };
+  
 
   const getGradientClass = (index) => {
     const gradients = [
@@ -91,27 +115,46 @@ const ViewTests = () => {
     setOpenEditorTest(test);
   };
 
+  const handleCreateLink = async (test) => {
+    if (!test || !test.id) return;
   
-  if (loading) return <div>Loading tests...</div>;
+    try {
+      const res = await fetch(
+        `http://localhost:8081/api/tests/${test.id}/generate-link`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
 
-  // If CodeEditor is open, render it instead of test list
+      if (!res.ok) throw new Error('Failed to create link');
+      
+      const link = await res.text();
+      navigator.clipboard.writeText(link);
+      alert(`Test link created and copied to clipboard:\n${link}`);
+    } catch (err) {
+      console.error('Error creating test link:', err);
+      alert('Failed to create test link');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-green-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-xl font-semibold text-gray-900 dark:text-white">Loading tests...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (openEditorTest) {
     return (
       <CodeEditor
         test={openEditorTest}
         onClose={() => setOpenEditorTest(null)}
       />
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-black">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-green-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-lg text-gray-600 dark:text-gray-400">Loading tests...</p>
-        </div>
-      </div>
     );
   }
 
@@ -128,7 +171,10 @@ const ViewTests = () => {
               Manage and monitor your created assessments
             </p>
           </div>
-          <button className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 text-white font-semibold px-8 py-3 rounded-lg transition-all hover:scale-105 flex items-center">
+          <button
+            onClick={() => onNavigate('/create-test')}
+            className="bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 text-white font-semibold px-8 py-3 rounded-lg transition-all hover:scale-105 flex items-center"
+          >
             <Plus className="w-5 h-5 mr-2" />
             Create New Test
           </button>
@@ -217,18 +263,25 @@ const ViewTests = () => {
               <div className="flex gap-2">
                 <button
                   onClick={() => setSelectedTest(test)}
-                  className="flex-1 flex items-center justify-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium"
+                  className="flex-1 flex items-center justify-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
                 >
                   <Eye className="w-4 h-4" />
                   View
                 </button>
-                <button className="flex-1 flex items-center justify-center gap-1 border border-green-400 text-green-500 hover:bg-green-400 hover:text-white px-3 py-2 rounded-lg text-sm font-medium">
-                  <Edit className="w-4 h-4" />
-                  Modify
+                <button
+                  onClick={() => handleCreateLink(test)}
+                  className="flex-1 flex items-center justify-center gap-1 border border-green-400 text-green-500 hover:bg-green-400 hover:text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Users className="w-4 h-4" />
+                  Link
                 </button>
-                <button className="flex items-center justify-center border border-red-500 text-red-500 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-sm font-medium">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <button
+  onClick={() => handleDeleteTest(test.id)}
+  className="flex items-center justify-center border border-red-500 text-red-500 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+>
+  <Trash2 className="w-4 h-4" />
+</button>
+
               </div>
             </div>
           ))}
@@ -248,8 +301,11 @@ const ViewTests = () => {
                 ? 'Try adjusting your search or filter criteria.'
                 : 'Create your first test to get started with assessments.'}
             </p>
-            <button className="bg-gradient-to-r from-green-400 to-blue-500 text-white font-semibold px-8 py-3 rounded-lg hover:scale-105 transition-all">
-              <Plus className="w-5 h-5 mr-2 inline" />
+            <button
+              onClick={() => onNavigate('/create-test')}
+              className="bg-gradient-to-r from-green-400 to-blue-500 text-white font-semibold px-8 py-3 rounded-lg hover:scale-105 transition-all inline-flex items-center"
+            >
+              <Plus className="w-5 h-5 mr-2" />
               Create New Test
             </button>
           </div>
@@ -257,12 +313,12 @@ const ViewTests = () => {
 
         {/* Preview Modal */}
         {selectedTest && (
-        <TestPreviewModal
-          test={selectedTest}
-          onClose={() => setSelectedTest(null)}
-          onOpenEditor={openEditor}
-        />
-      )}
+          <TestPreviewModal
+            test={selectedTest}
+            onClose={() => setSelectedTest(null)}
+            onOpenEditor={openEditor}
+          />
+        )}
       </div>
     </div>
   );

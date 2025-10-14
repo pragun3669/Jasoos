@@ -1,50 +1,38 @@
 import React from 'react';
 import {
-  X, FileText, BarChart3, Users, Settings, BookOpen,
-  ClipboardList, TrendingUp, Calendar, Shield, HelpCircle, Code
+  X, FileText, BarChart3, Settings, HelpCircle, Code, Shield
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext'; // use real auth
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Sidebar({ isOpen = false, onClose = () => {}, onNavigate = () => {} }) {
-  const { user } = useAuth(); // get current user
+  const { user } = useAuth();
 
   const menuItems = [
     {
       category: 'Test Management',
       items: [
-        { icon: Code, label: 'Create Test', page: 'createTest', color: 'text-green-400', auth: true },
-        { icon: FileText, label: 'View Tests', page: 'viewTests', color: 'text-blue-400', auth: true },
-        { icon: ClipboardList, label: 'Test Templates', page: 'testTemplates', color: 'text-purple-400', auth: true },
-        { icon: Calendar, label: 'Schedule Tests', page: 'scheduleTests', color: 'text-orange-400', auth: true }
+        { icon: Code, label: 'Create Test', path: '/create-test', color: 'text-green-400', auth: true },
+        { icon: FileText, label: 'View Tests', path: '/view-tests', color: 'text-blue-400', auth: true }
       ]
     },
     {
       category: 'Analytics & Results',
       items: [
-        { icon: BarChart3, label: 'Test Results', page: 'testResults', color: 'text-cyan-400', auth: true },
-        { icon: TrendingUp, label: 'Analytics', page: 'analytics', color: 'text-pink-400', auth: true },
-        { icon: Users, label: 'Student Reports', page: 'studentReports', color: 'text-indigo-400', auth: true }
-      ]
-    },
-    {
-      category: 'Proctoring',
-      items: [
-        { icon: Shield, label: 'Live Monitoring', page: 'liveMonitoring', color: 'text-red-400', auth: true },
-        { icon: BookOpen, label: 'Violation Reports', page: 'violationReports', color: 'text-yellow-400', auth: true }
+        { icon: BarChart3, label: 'Test Results', path: '/test-results', color: 'text-cyan-400', auth: true }
       ]
     },
     {
       category: 'System',
       items: [
-        { icon: Settings, label: 'Settings', page: 'settings', color: 'text-gray-400', auth: false },
-        { icon: HelpCircle, label: 'Help & Support', page: 'help', color: 'text-teal-400', auth: false }
+        { icon: Settings, label: 'Settings', path: '/settings', color: 'text-gray-400', auth: false },
+        { icon: HelpCircle, label: 'Help & Support', path: '/help', color: 'text-teal-400', auth: false }
       ]
     }
   ];
 
-  const handleItemClick = (page) => {
-    console.log(`Navigating to: ${page}`);
-    onNavigate(page);
+  const handleItemClick = (path) => {
+    console.log(`Navigating to: ${path}`);
+    onNavigate(path);
     onClose();
   };
 
@@ -99,7 +87,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {}, onNavigate
                     return (
                       <button
                         key={i}
-                        onClick={() => handleItemClick(item.page)}
+                        onClick={() => handleItemClick(item.path)}
                         className="flex w-full items-center px-3 py-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 group"
                       >
                         <div className={`p-2 rounded-lg ${item.color} bg-opacity-10 mr-3 group-hover:scale-110 transition-transform`}>
@@ -113,27 +101,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {}, onNavigate
               </div>
             ))}
 
-            {/* Demo: Additional content to show scrolling */}
-            <div className="pt-4">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
-                Recent Activity
-              </h3>
-              <div className="space-y-2 px-3">
-                <div className="text-sm text-gray-600 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="font-medium">Math Test 101</div>
-                  <div className="text-xs text-gray-500">Started 2 hours ago</div>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="font-medium">Physics Quiz</div>
-                  <div className="text-xs text-gray-500">Completed 1 day ago</div>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="font-medium">Chemistry Lab</div>
-                  <div className="text-xs text-gray-500">Scheduled for tomorrow</div>
-                </div>
-              </div>
-            </div>
-
+            {/* Quick Stats */}
             <div className="pt-4">
               <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
                 Quick Stats

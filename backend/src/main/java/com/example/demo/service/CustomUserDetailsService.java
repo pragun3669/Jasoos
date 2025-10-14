@@ -1,8 +1,8 @@
 package com.example.demo.service;
 
 
-import com.example.demo.entity.Admin;
-import com.example.demo.entity.Teacher;
+import com.example.demo.entity.admin.Admin;
+import com.example.demo.entity.teacher.Teacher;
 import com.example.demo.repository.admin.AdminRepository;
 import com.example.demo.repository.teacher.TeacherRepository;
 import org.springframework.beans.factory.annotation.Autowired;

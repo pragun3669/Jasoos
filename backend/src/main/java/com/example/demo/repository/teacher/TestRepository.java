@@ -3,7 +3,7 @@ package com.example.demo.repository.teacher;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import com.example.demo.entity.Test;
+import com.example.demo.entity.teacher.Test;
 
 public interface TestRepository extends JpaRepository<Test, Long> {
 

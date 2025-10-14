@@ -1,17 +1,51 @@
 version: '3.8'
+
 services:
+  # MySQL Database
   mysql-db:
     image: mysql:8.0
     container_name: jasoos-mysql
     ports:
-      - "3306:3306" # Map your local port 3306 to the container's port 3306
+      - "3307:3306" # Host 3307 -> Container 3306
     environment:
-      MYSQL_ROOT_PASSWORD: yourpassword # Sets the root password
-      MYSQL_DATABASE: teacherdb # Creates the first database on startup
-      MYSQL_USER: user # Optional: create a non-root user
-      MYSQL_PASSWORD: password # Optional: password for the non-root user
+      MYSQL_ROOT_PASSWORD: root       # root password
+      MYSQL_DATABASE: teacherdb       # creates initial DB
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql-data:/var/lib/mysql
+    networks:
+      - jasoos-net
+
+  # Spring Boot Backend
+  backend:
+    build:
+      context: ./backend
+    container_name: jasoos-backend
+    ports:
+      - "8081:8080" # Host 8081 -> Container 8080
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/teacherdb
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+    depends_on:
+      - mysql-db
+    networks:
+      - jasoos-net
+
+  # Runner microservice (Python Flask)
+  runner:
+    build:
+      context: ./runner
+    container_name: jasoos-runner
+    ports:
+      - "5000:5000" # expose runner service
+    restart: on-failure
+    networks:
+      - jasoos-net
+
+networks:
+  jasoos-net:
+    driver: bridge
 
 volumes:
   mysql-data:
