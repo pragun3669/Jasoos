@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Editor } from '@monaco-editor/react';
 import { 
@@ -22,15 +21,21 @@ import { useTheme } from '../contexts/ThemeContext';
 
 const StudentTestEditor = () => {
   const location = useLocation();
-  const { test, student, testLinkToken } = location.state || {};
+  const { test, student, testLinkToken, faceReferenceData: incomingFaceRef, proctoringStarted, proctoringBackend, proctoringEnabled } = location.state || {};
   const navigate = useNavigate();
   const { theme } = useTheme();
   const editorRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const proctoringIntervalRef = useRef(null);
+  const proctoringCanvasRef = useRef(null);
+  const lastWarningTimeRef = useRef(0);
   const { user } = useAuth();
   const authToken = user?.token;
   const testToken = testLinkToken;
+  
+  // Proctoring state
+  const lastTabSwitchTimeRef = useRef(0);
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState('python');
@@ -42,7 +47,7 @@ const StudentTestEditor = () => {
   const [compilerOutput, setCompilerOutput] = useState('');
   const [testResults, setTestResults] = useState([]);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [isProctoringActive, setIsProctoringActive] = useState(true);
+  const [isProctoringActive, setIsProctoringActive] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyPasteAttempts, setCopyPasteAttempts] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,12 +57,429 @@ const StudentTestEditor = () => {
   const [timerRunning, setTimerRunning] = useState(true);
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
   const MAX_TAB_SWITCHES = 5;
-
+  
+  const [proctoringReady, setProctoringReady] = useState(false);
+  const [faceReferenceData, setFaceReferenceData] = useState(null);
+  const [showTabWarning, setShowTabWarning] = useState(false);
+  const [showViolationAlert, setShowViolationAlert] = useState(false);
+  const [violationType, setViolationType] = useState('');
+  const [violationMessage, setViolationMessage] = useState('');
+  const PROCTORING_BACKEND = proctoringBackend || "http://localhost:5001";
+  const WARNING_COOLDOWN = 15000; // 15 seconds cooldown between warnings
+  
   const languages = [
     { id: 'python', name: 'Python', extension: 'py' },
     { id: 'java', name: 'Java', extension: 'java' },
     { id: 'cpp', name: 'C++', extension: 'cpp' }
   ];
+
+  // Store incoming face reference data
+  useEffect(() => {
+    if (incomingFaceRef) {
+      setFaceReferenceData(incomingFaceRef);
+      console.log('✅ Face reference received from DeviceCheck:', incomingFaceRef);
+    }
+  }, [incomingFaceRef]);
+
+  const drawLiveBoundingBoxes = useCallback((canvas, video, data) => {
+    if (!canvas || !video) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Set canvas dimensions to match video
+    const videoWidth = video.videoWidth || video.clientWidth;
+    const videoHeight = video.videoHeight || video.clientHeight;
+    
+    if (videoWidth === 0 || videoHeight === 0) return;
+    
+    canvas.width = videoWidth;
+    canvas.height = videoHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (!data || !data.reference_face_bbox) return;
+    
+    const referenceBbox = data.reference_face_bbox;
+    const [x1, y1, x2, y2] = referenceBbox;
+    
+    // Scale coordinates to canvas size
+    const scaleX = canvas.width / videoWidth;
+    const scaleY = canvas.height / videoHeight;
+    
+    const scaledX1 = x1 * scaleX;
+    const scaledY1 = y1 * scaleY;
+    const scaledX2 = x2 * scaleX;
+    const scaledY2 = y2 * scaleY;
+    
+    const width = scaledX2 - scaledX1;
+    const height = scaledY2 - scaledY1;
+    const centerX = scaledX1 + width / 2;
+    const centerY = scaledY1 + height / 2;
+    
+    // Determine box color based on status
+    let mainBoxColor = '#10B981'; // Green (good)
+    let boxLabel = 'GOOD POSITION';
+    
+    if (data.status === 'no_face') {
+      mainBoxColor = '#EF4444'; // Red
+      boxLabel = 'NO FACE DETECTED';
+    } else if (data.status === 'face_moved') {
+      mainBoxColor = '#F59E0B'; // Yellow
+      boxLabel = 'ADJUST POSITION';
+    } else if (data.status === 'eyes_closed') {
+      mainBoxColor = '#F59E0B'; // Yellow
+      boxLabel = 'EYES CLOSED';
+    } else if (data.status === 'looking_away') {
+      mainBoxColor = '#F59E0B'; // Yellow
+      boxLabel = 'LOOK AT SCREEN';
+    } else if (data.status === 'unauthorized_object') {
+      mainBoxColor = '#EF4444'; // Red
+      boxLabel = 'OBJECT DETECTED';
+    } else if (data.warnings && data.warnings.length > 0) {
+      mainBoxColor = '#F59E0B'; // Yellow
+      boxLabel = 'WARNING';
+    }
+    
+    // Draw ideal face box (reference position)
+    ctx.strokeStyle = mainBoxColor;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    ctx.strokeRect(scaledX1, scaledY1, width, height);
+    
+    // Draw corner brackets
+    const cornerLength = 25;
+    ctx.lineWidth = 3;
+    
+    // Top-left corner
+    ctx.beginPath();
+    ctx.moveTo(scaledX1, scaledY1 + cornerLength);
+    ctx.lineTo(scaledX1, scaledY1);
+    ctx.lineTo(scaledX1 + cornerLength, scaledY1);
+    ctx.stroke();
+    
+    // Top-right corner
+    ctx.beginPath();
+    ctx.moveTo(scaledX2 - cornerLength, scaledY1);
+    ctx.lineTo(scaledX2, scaledY1);
+    ctx.lineTo(scaledX2, scaledY1 + cornerLength);
+    ctx.stroke();
+    
+    // Bottom-left corner
+    ctx.beginPath();
+    ctx.moveTo(scaledX1, scaledY2 - cornerLength);
+    ctx.lineTo(scaledX1, scaledY2);
+    ctx.lineTo(scaledX1 + cornerLength, scaledY2);
+    ctx.stroke();
+    
+    // Bottom-right corner
+    ctx.beginPath();
+    ctx.moveTo(scaledX2 - cornerLength, scaledY2);
+    ctx.lineTo(scaledX2, scaledY2);
+    ctx.lineTo(scaledX2, scaledY2 - cornerLength);
+    ctx.stroke();
+    
+    // Warning zones (yellow) - slightly larger
+    const warningPadding = 40;
+    ctx.strokeStyle = '#F59E0B';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.strokeRect(
+      scaledX1 - warningPadding,
+      scaledY1 - warningPadding,
+      width + warningPadding * 2,
+      height + warningPadding * 2
+    );
+    
+    // Danger zones (red) - even larger
+    const dangerPadding = 70;
+    ctx.strokeStyle = '#EF4444';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(
+      scaledX1 - dangerPadding,
+      scaledY1 - dangerPadding,
+      width + dangerPadding * 2,
+      height + dangerPadding * 2
+    );
+    
+    // Center crosshair
+    ctx.strokeStyle = mainBoxColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    const crossSize = 15;
+    
+    ctx.beginPath();
+    ctx.moveTo(centerX - crossSize, centerY);
+    ctx.lineTo(centerX + crossSize, centerY);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - crossSize);
+    ctx.lineTo(centerX, centerY + crossSize);
+    ctx.stroke();
+    
+    ctx.fillStyle = mainBoxColor;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 3, 0, 2 * Math.PI);
+    ctx.fill();
+    
+    // Draw current face bbox if detected
+    if (data.face_bbox) {
+      const [fx1, fy1, fx2, fy2] = data.face_bbox;
+      const scaledFx1 = fx1 * scaleX;
+      const scaledFy1 = fy1 * scaleY;
+      const scaledFx2 = fx2 * scaleX;
+      const scaledFy2 = fy2 * scaleY;
+      
+      ctx.strokeStyle = mainBoxColor;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.globalAlpha = 0.7;
+      ctx.strokeRect(scaledFx1, scaledFy1, scaledFx2 - scaledFx1, scaledFy2 - scaledFy1);
+      ctx.globalAlpha = 1.0;
+    }
+    
+    // Show status label at top
+    const labelWidth = 180;
+    const labelHeight = 30;
+    ctx.fillStyle = mainBoxColor === '#10B981' ? 'rgba(16, 185, 129, 0.9)' : 
+                     mainBoxColor === '#F59E0B' ? 'rgba(245, 158, 11, 0.9)' : 
+                     'rgba(239, 68, 68, 0.9)';
+    ctx.fillRect(10, 10, labelWidth, labelHeight);
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText(boxLabel, 20, 28);
+  }, []);
+
+  // Continuous frame processing for video proctoring
+  const processContinuousFrames = useCallback(async () => {
+    if (!videoRef.current || !proctoringReady) return;
+    
+    try {
+      const video = videoRef.current;
+      
+      if (!video.videoWidth || video.paused || video.ended) {
+        return;
+      }
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      
+      const frameDataURL = canvas.toDataURL('image/jpeg', 0.6);
+      
+      const response = await fetch(`${PROCTORING_BACKEND}/process-frame`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frame: frameDataURL })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Draw bounding boxes on the live video feed
+        if (proctoringCanvasRef.current) {
+          drawLiveBoundingBoxes(proctoringCanvasRef.current, video, data);
+        }
+        
+        // Check cooldown period before showing new warnings
+        const now = Date.now();
+        const timeSinceLastWarning = now - lastWarningTimeRef.current;
+        
+        if (timeSinceLastWarning >= WARNING_COOLDOWN) {
+          // Check for violations and show warnings (no auto-submit, no counting)
+          if (data.status === 'no_face') {
+            setViolationType('no_face');
+            setViolationMessage('⚠️ No face detected - Please position yourself in the frame');
+            setShowViolationAlert(true);
+            lastWarningTimeRef.current = now;
+            setTimeout(() => setShowViolationAlert(false), 5000);
+          } else if (data.status === 'face_moved') {
+            setViolationType('face_moved');
+            setViolationMessage('⚠️ Face moved - Please stay within the green box');
+            setShowViolationAlert(true);
+            lastWarningTimeRef.current = now;
+            setTimeout(() => setShowViolationAlert(false), 5000);
+          } else if (data.status === 'eyes_closed') {
+            setViolationType('eyes_closed');
+            setViolationMessage('⚠️ Eyes closed - Keep your eyes open');
+            setShowViolationAlert(true);
+            lastWarningTimeRef.current = now;
+            setTimeout(() => setShowViolationAlert(false), 5000);
+          } else if (data.status === 'looking_away') {
+            setViolationType('looking_away');
+            setViolationMessage('⚠️ Looking away - Focus on the screen');
+            setShowViolationAlert(true);
+            lastWarningTimeRef.current = now;
+            setTimeout(() => setShowViolationAlert(false), 5000);
+          } else if (data.status === 'unauthorized_object') {
+            setViolationType('unauthorized_object');
+            setViolationMessage('🚨 Unauthorized object detected - Remove it immediately');
+            setShowViolationAlert(true);
+            lastWarningTimeRef.current = now;
+            setTimeout(() => setShowViolationAlert(false), 5000);
+          } else if (data.warnings && data.warnings.length > 0) {
+            setViolationType('warning');
+            setViolationMessage(`⚠️ ${data.warnings[0]}`);
+            setShowViolationAlert(true);
+            lastWarningTimeRef.current = now;
+            setTimeout(() => setShowViolationAlert(false), 5000);
+          }
+        }
+      }
+      
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Frame processing error:', error);
+      }
+    }
+  }, [PROCTORING_BACKEND, proctoringReady, drawLiveBoundingBoxes]);
+
+ 
+  // Initialize proctoring with camera and reference
+  const initializeProctoring = useCallback(async () => {
+    try {
+      console.log('🎥 Initializing proctoring...');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: { ideal: 640 }, height: { ideal: 480 } }, 
+        audio: true 
+      });
+      
+      streamRef.current = stream;
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current.play().catch(err => console.error('Video play error:', err));
+        };
+      }
+      
+      setIsProctoringActive(true);
+      console.log('✅ Camera stream initialized');
+      
+      // Start proctoring backend if not already started
+      if (!proctoringStarted) {
+        try {
+          const startResp = await fetch(`${PROCTORING_BACKEND}/start-proctoring`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (startResp.ok) {
+            console.log('✅ Proctoring backend started');
+          }
+        } catch (err) {
+          console.warn('⚠️ Proctoring backend not available:', err);
+        }
+      }
+
+      // Mark proctoring as ready (reference already set in DeviceCheck)
+      setTimeout(() => {
+        setProctoringReady(true);
+        
+        // Start continuous frame processing every 2 seconds
+        proctoringIntervalRef.current = setInterval(() => {
+          processContinuousFrames();
+        }, 2000);
+        
+        console.log('✅ Continuous proctoring started');
+      }, 1000);
+      
+    } catch (error) {
+      console.error('❌ Proctoring initialization error:', error);
+      setIsProctoringActive(false);
+      setCompilerOutput('⚠️ Warning: Camera access denied. Proctoring disabled.\n');
+    }
+  }, [PROCTORING_BACKEND, proctoringStarted, processContinuousFrames]);
+
+  // Handle final submit function
+  const handleFinalSubmit = useCallback(async () => {
+    setShowSubmitModal(false);
+    setIsSubmitting(true);
+    setTimerRunning(false);
+    setCompilerOutput(prev => prev + '\n📤 Preparing final submission...\n');
+
+    // Stop proctoring
+    if (proctoringIntervalRef.current) {
+      clearInterval(proctoringIntervalRef.current);
+    }
+
+    try {
+      if (!testToken) {
+        throw new Error('Test token missing');
+      }
+
+      const payload = {
+        name: student.name,
+        email: student.email,
+        batch: student.batch,
+        submittedAt: new Date().toISOString(),
+        testId: test.id,
+        questionResults: Object.entries(questionStatuses).map(([idx, q]) => ({
+          questionId: test.questions[parseInt(idx)].id,
+          correct: q.correct,
+          attempts: q.attempts,
+          output: q.output,
+          results: q.results || []
+        })),
+        tabSwitchCount,
+        copyPasteAttempts,
+        faceReferenceData: faceReferenceData ? {
+          face_center: faceReferenceData.face_center,
+          face_bbox: faceReferenceData.face_bbox,
+          capturedAt: faceReferenceData.timestamp
+        } : null
+      };
+
+      const response = await fetch(`http://localhost:8081/api/tests/link/${testToken}/submit-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken && { 'Authorization': `Bearer ${authToken}` })
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Submit failed: ${response.status}`);
+      }
+
+      const savedStudent = await response.json();
+      setCompilerOutput(prev => prev + '\n✅ Test submitted successfully!\n');
+
+      // Clear localStorage after successful submission
+      localStorage.removeItem(`test-${test.id}-student-${student.id}-timer`);
+      localStorage.removeItem(`test-${test.id}-student-${student.id}-timer-timestamp`);
+      localStorage.removeItem(`test-${test.id}-student-${student.id}-warnings`);
+      test.questions.forEach((_, idx) => {
+        localStorage.removeItem(`test-${test.id}-q${idx}`);
+      });
+
+      setTimeout(() => {
+        navigate('/test-complete', { 
+          state: { 
+            test, 
+            student: savedStudent,
+            questionStatuses,
+            tabSwitchCount,
+            copyPasteAttempts
+          },
+          replace: true
+        });
+      }, 2000);
+
+    } catch (err) {
+      console.error('Submit error:', err);
+      setCompilerOutput(prev => prev + `\n❌ Submission failed: ${err.message}\nPlease try again.\n`);
+      setIsSubmitting(false);
+      setShowSubmitModal(true);
+    }
+  }, [testToken, student, test, questionStatuses, tabSwitchCount, copyPasteAttempts, faceReferenceData, authToken, navigate]);
+
+  // Main initialization effect
   useEffect(() => {
     if (!test || !student) {
       navigate('/');
@@ -66,10 +488,18 @@ const StudentTestEditor = () => {
   
     if (!testToken) {
       console.error('CRITICAL: Test link token is missing!');
-      alert('Test access token is missing. Cannot submit test.');
     }
+
+    // Warn before leaving page
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = 'Are you sure you want to leave? Your test progress may be lost.';
+      return e.returnValue;
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
   
-    // Initialize or restore timer from localStorage
+    // Initialize timer
     const timerKey = `test-${test.id}-student-${student.id}-timer`;
     const savedTimer = localStorage.getItem(timerKey);
     const savedTimestamp = localStorage.getItem(`${timerKey}-timestamp`);
@@ -78,21 +508,30 @@ const StudentTestEditor = () => {
       const elapsed = Math.floor((Date.now() - parseInt(savedTimestamp)) / 1000);
       const remaining = parseInt(savedTimer) - elapsed;
       setTimeRemaining(remaining > 0 ? remaining : 0);
-      if (remaining <= 0) {
-        handleAutoSubmit();
-      }
     } else {
       const initialTime = test.duration * 60;
       setTimeRemaining(initialTime);
       localStorage.setItem(timerKey, initialTime.toString());
       localStorage.setItem(`${timerKey}-timestamp`, Date.now().toString());
     }
+
+    // Load warnings from localStorage
+    const savedWarnings = localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`);
+    if (savedWarnings) {
+      const warnings = JSON.parse(savedWarnings);
+      setTabSwitchCount(warnings.tabSwitchCount || 0);
+      setCopyPasteAttempts(warnings.copyPasteAttempts || 0);
+    }
   
     setIsTimerInitialized(true);
-    initializeProctoring();
+    
+    // Initialize proctoring if enabled
+    if (proctoringEnabled) {
+      initializeProctoring();
+    }
   
-    // ✅ Correctly handle code setup
-    const savedCode = localStorage.getItem(`test-${test.id}-q${currentQuestionIndex}`);
+    // Load saved code
+    const savedCode = localStorage.getItem(`test-${test.id}-q0`);
     if (savedCode) {
       setCode(savedCode);
     } else if (test.questions && test.questions.length > 0) {
@@ -102,7 +541,7 @@ const StudentTestEditor = () => {
       setCode(getDefaultCode(language));
     }
   
-    // ✅ Set test cases
+    // Initialize test cases
     if (test.questions && test.questions.length > 0) {
       const question = test.questions[0];
       const formattedTestCases =
@@ -117,61 +556,93 @@ const StudentTestEditor = () => {
       setTestCases(formattedTestCases);
     }
   
-    // ✅ Event listeners
+    // Tab visibility handler
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        setTabSwitchCount((prev) => {
-          const newCount = prev + 1;
-          const remaining = MAX_TAB_SWITCHES - newCount;
-  
-          let warningMsg = `\n⚠️ WARNING: Tab switch detected at ${new Date().toLocaleTimeString()}!\n`;
-  
-          if (newCount >= MAX_TAB_SWITCHES) {
-            warningMsg += `🚨 MAXIMUM TAB SWITCHES EXCEEDED! Test will be auto-submitted.\n`;
-            setTimeout(() => handleAutoSubmit(), 2000);
-          } else {
-            warningMsg += `⚠️ ${remaining} warning${remaining !== 1 ? 's' : ''} remaining before auto-submit!\n`;
-          }
-  
-          setCompilerOutput((prev) => prev + warningMsg);
-          return newCount;
-        });
+        const now = Date.now();
+        if (now - lastTabSwitchTimeRef.current > 3000) {
+          lastTabSwitchTimeRef.current = now;
+          setTabSwitchCount((prev) => {
+            const newCount = prev + 1;
+            const remaining = MAX_TAB_SWITCHES - newCount;
+
+            setShowTabWarning(true);
+            setTimeout(() => setShowTabWarning(false), 3000);
+
+            let warningMsg = `⚠️ Tab switch detected at ${new Date().toLocaleTimeString()}\n`;
+
+            if (newCount >= MAX_TAB_SWITCHES) {
+              warningMsg = `🚨 MAXIMUM TAB SWITCHES EXCEEDED! Auto-submitting...\n`;
+              setCompilerOutput((prev) => prev + warningMsg);
+              setTimeout(() => {
+                handleFinalSubmit();
+              }, 2000);
+            } else {
+              warningMsg += `${remaining} warning${remaining !== 1 ? 's' : ''} remaining\n`;
+              setCompilerOutput((prev) => prev + warningMsg);
+            }
+
+            const currentWarnings = JSON.parse(localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`) || '{}');
+            localStorage.setItem(`test-${test.id}-student-${student.id}-warnings`, JSON.stringify({
+              ...currentWarnings,
+              tabSwitchCount: newCount
+            }));
+
+            return newCount;
+          });
+        }
       }
     };
   
     document.addEventListener('visibilitychange', handleVisibilityChange);
   
+    // Copy/Paste handlers
     const handleCopyPasteCut = (e) => {
       e.preventDefault();
-      setCopyPasteAttempts((prev) => prev + 1);
-      setCompilerOutput((prev) => prev + `\n⚠️ Copy/Paste/Cut operations are disabled during the exam!\n`);
+      setCopyPasteAttempts((prev) => {
+        const newCount = prev + 1;
+        setCompilerOutput((prevOutput) => prevOutput + `⚠️ Copy/Paste/Cut disabled during exam\n`);
+        
+        const currentWarnings = JSON.parse(localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`) || '{}');
+        localStorage.setItem(`test-${test.id}-student-${student.id}-warnings`, JSON.stringify({
+          ...currentWarnings,
+          copyPasteAttempts: newCount
+        }));
+
+        return newCount;
+      });
       return false;
     };
   
     document.addEventListener('copy', handleCopyPasteCut);
     document.addEventListener('paste', handleCopyPasteCut);
     document.addEventListener('cut', handleCopyPasteCut);
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
   
-    const handleContextMenu = (e) => {
-      e.preventDefault();
-      return false;
-    };
-    document.addEventListener('contextmenu', handleContextMenu);
-  
-    // ✅ Cleanup
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('copy', handleCopyPasteCut);
       document.removeEventListener('paste', handleCopyPasteCut);
       document.removeEventListener('cut', handleCopyPasteCut);
-      document.removeEventListener('contextmenu', handleContextMenu);
-  
+      document.removeEventListener('contextmenu', (e) => e.preventDefault());
+      
+      if (proctoringIntervalRef.current) {
+        clearInterval(proctoringIntervalRef.current);
+      }
+      
+      if (proctoringEnabled) {
+        fetch(`${PROCTORING_BACKEND}/stop-proctoring`, { method: 'POST' })
+          .catch(err => console.error('Failed to stop proctoring:', err));
+      }
+      
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [test, student, navigate]);
+  }, [test, student, navigate, proctoringEnabled, PROCTORING_BACKEND, testToken, initializeProctoring, handleFinalSubmit]);
   
+  // Timer effect
   useEffect(() => {
     if (!timerRunning || timeRemaining <= 0 || !isTimerInitialized) return;
   
@@ -180,14 +651,13 @@ const StudentTestEditor = () => {
     const timer = setInterval(() => {
       setTimeRemaining(prev => {
         const newTime = prev - 1;
-        
-        // Update localStorage
         localStorage.setItem(timerKey, newTime.toString());
         localStorage.setItem(`${timerKey}-timestamp`, Date.now().toString());
         
         if (newTime <= 1) {
           setTimerRunning(false);
-          handleAutoSubmit();
+          setCompilerOutput(prev => prev + '\n⏰ Time is up! Auto-submitting test...\n');
+          handleFinalSubmit();
           return 0;
         }
         return newTime;
@@ -195,35 +665,18 @@ const StudentTestEditor = () => {
     }, 1000);
   
     return () => clearInterval(timer);
-  }, [timerRunning, timeRemaining, isTimerInitialized, test?.id, student?.id]);
-  
-  const initializeProctoring = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      streamRef.current = stream;
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      
-      setIsProctoringActive(false);
-    } catch (error) {
-      console.error('Proctoring error:', error);
-      setIsProctoringActive(false);
-      setCompilerOutput('⚠️ Warning: Proctoring could not be activated.\n');
-    }
-  };
-  // Auto-save code changes to localStorage
-useEffect(() => {
-  if (test?.id && currentQuestionIndex !== undefined && code) {
-    const debounceTimer = setTimeout(() => {
-      localStorage.setItem(`test-${test.id}-q${currentQuestionIndex}`, code);
-    }, 500);
-    
-    return () => clearTimeout(debounceTimer);
-  }
-}, [code, test?.id, currentQuestionIndex]);
+  }, [timerRunning, timeRemaining, isTimerInitialized, test?.id, student?.id, handleFinalSubmit]);
 
+  // Auto-save code
+  useEffect(() => {
+    if (test?.id && currentQuestionIndex !== undefined && code) {
+      const debounceTimer = setTimeout(() => {
+        localStorage.setItem(`test-${test.id}-q${currentQuestionIndex}`, code);
+      }, 500);
+      
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [code, test?.id, currentQuestionIndex]);
 
   const formatTime = (seconds) => {
     const hours = Math.floor(seconds / 3600);
@@ -246,28 +699,9 @@ useEffect(() => {
 
   function getDefaultCode(language) {
     const templates = {
-      python: `def solution(input_data):
-    """
-    Your solution here
-    """
-    pass`,
-      java: `class Solution {
-    public String solution(String input) {
-        // Your code here
-        
-    }
-}`,
-      cpp: `#include <iostream>
-#include <string>
-using namespace std;
-
-class Solution {
-public:
-    string solution(string input) {
-        // Your code here
-        
-    }
-};`
+      python: `def solution(input_data):\n    """\n    Your solution here\n    """\n    pass`,
+      java: `class Solution {\n    public String solution(String input) {\n        // Your code here\n        \n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    string solution(string input) {\n        // Your code here\n        \n    }\n};`
     };
     return templates[language] || templates.python;
   }
@@ -288,8 +722,18 @@ public:
       if (isCopy || isPaste || isCut) {
         e.preventDefault();
         e.stopPropagation();
-        setCopyPasteAttempts(prev => prev + 1);
-        setCompilerOutput(prev => prev + `\n⚠️ Copy/Paste/Cut operations are disabled during the exam!\n`);
+        setCopyPasteAttempts(prev => {
+          const newCount = prev + 1;
+          setCompilerOutput((prevOutput) => prevOutput + `⚠️ Copy/Paste/Cut disabled\n`);
+          
+          const currentWarnings = JSON.parse(localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`) || '{}');
+          localStorage.setItem(`test-${test.id}-student-${student.id}-warnings`, JSON.stringify({
+            ...currentWarnings,
+            copyPasteAttempts: newCount
+          }));
+
+          return newCount;
+        });
       }
     });
     
@@ -321,7 +765,7 @@ public:
 
     setIsRunning(true);
     setActiveTab('result');
-    setCompilerOutput('🔄 Running your code...\n');
+    setCompilerOutput('Running code...\n');
     setTestResults([]);
 
     try {
@@ -350,22 +794,21 @@ public:
       );
 
       if (!submissionResp.ok) {
-        const text = await submissionResp.text();
-        throw new Error(`Submission failed: ${submissionResp.status} ${text}`);
+        throw new Error(`Submission failed: ${submissionResp.status}`);
       }
 
       const submissionData = await submissionResp.json();
       const subId = submissionData.id || submissionData.submissionId;
-      if (!subId) throw new Error('Submission ID missing from response');
+      if (!subId) throw new Error('Submission ID missing');
 
-      setCompilerOutput('✓ Code submitted successfully\n🔄 Waiting for results...\n');
+      setCompilerOutput('Code submitted. Waiting for results...\n');
 
       let status = 'PENDING';
       let attempts = 0;
       while ((status === 'PENDING' || status === 'RUNNING') && attempts < 60) {
         await new Promise(res => setTimeout(res, 1000));
         const statusResp = await fetch(`http://localhost:8081/api/submissions/${subId}`);
-        if (!statusResp.ok) throw new Error('Failed to fetch submission status');
+        if (!statusResp.ok) throw new Error('Failed to fetch status');
         const statusData = await statusResp.json();
         status = statusData.status;
         attempts++;
@@ -409,21 +852,21 @@ public:
         }
       }));
 
-      let output = '═══════════════════════════════════════════════\n';
-      output += `  TEST RESULTS: ${passed}/${total} Test Cases Passed\n`;
-      output += '═══════════════════════════════════════════════\n\n';
+      let output = '╔═══════════════════════════════════════╗\n';
+      output += `TEST RESULTS: ${passed}/${total} Passed\n`;
+      output += '╚═══════════════════════════════════════╝\n\n';
 
       formattedResults.filter(r => r.isExample).forEach(r => {
         if (r.status === 'pass') {
-          output += `✅ Test Case ${r.testCaseNumber}: PASSED\n`;
-          output += `   Input: ${r.input}\n`;
-          output += `   Output: ${r.actualOutput}\n\n`;
+          output += `✅ Test ${r.testCaseNumber}: PASSED\n`;
+          output += `Input: ${r.input}\n`;
+          output += `Output: ${r.actualOutput}\n\n`;
         } else {
-          output += `❌ Test Case ${r.testCaseNumber}: FAILED\n`;
-          output += `   Input: ${r.input}\n`;
-          output += `   Expected: ${r.expectedOutput}\n`;
-          output += `   Got: ${r.actualOutput}\n`;
-          if (r.stderr) output += `   Error: ${r.stderr}\n`;
+          output += `❌ Test ${r.testCaseNumber}: FAILED\n`;
+          output += `Input: ${r.input}\n`;
+          output += `Expected: ${r.expectedOutput}\n`;
+          output += `Got: ${r.actualOutput}\n`;
+          if (r.stderr) output += `Error: ${r.stderr}\n`;
           output += '\n';
         }
       });
@@ -432,7 +875,7 @@ public:
 
     } catch (err) {
       console.error(err);
-      setCompilerOutput(`⚠️ ERROR: ${err.message}\n\nCheck your code and try again.`);
+      setCompilerOutput(`ERROR: ${err.message}\n\nCheck your code and try again.`);
     } finally {
       setIsRunning(false);
     }
@@ -487,185 +930,6 @@ public:
     setShowSubmitModal(true);
   };
 
-  const handleAutoSubmit = () => {
-    setCompilerOutput(prev => prev + '\n⏰ Time is up! Auto-submitting test...\n');
-    setTimerRunning(false);
-    setIsSubmitting(true);
-    
-    handleFinalSubmit();
-  };
-
-  const handleFinalSubmit = async () => {
-    setShowSubmitModal(false);
-    setIsSubmitting(true);
-    setTimerRunning(false);
-    setCompilerOutput(prev => prev + '\n📤 Preparing final submission...\n');
-
-    try {
-      if (!testToken) {
-        throw new Error('Test token is missing. Cannot submit.');
-      }
-
-      const currentStatus = questionStatuses[currentQuestionIndex];
-      if (!currentStatus?.attempted) {
-        setCompilerOutput(prev => prev + `\n🔄 Running code for Question ${currentQuestionIndex + 1}...\n`);
-        
-        try {
-          const question = test.questions[currentQuestionIndex];
-          const extMap = { python: 'py', java: 'java', cpp: 'cpp' };
-          const filename = `Solution.${extMap[selectedLanguage] || 'txt'}`;
-
-          const body = {
-            language: selectedLanguage,
-            source: code,
-            filename,
-            stdin: '',
-            questionId: question.id,
-            studentId: student.id
-          };
-
-          const submissionResp = await fetch(
-            `http://localhost:8081/api/submissions?testId=${test.id}&studentId=${student.id}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body)
-            }
-          );
-
-          if (submissionResp.ok) {
-            const submissionData = await submissionResp.json();
-            const subId = submissionData.id || submissionData.submissionId;
-            
-            if (subId) {
-              let status = 'PENDING';
-              let attempts = 0;
-              while ((status === 'PENDING' || status === 'RUNNING') && attempts < 60) {
-                await new Promise(res => setTimeout(res, 1000));
-                const statusResp = await fetch(`http://localhost:8081/api/submissions/${subId}`);
-                if (statusResp.ok) {
-                  const statusData = await statusResp.json();
-                  status = statusData.status;
-                }
-                attempts++;
-              }
-
-              const resultsResp = await fetch(`http://localhost:8081/api/submissions/${subId}/results`);
-              if (resultsResp.ok) {
-                const apiResults = await resultsResp.json();
-                
-                const formattedResults = apiResults.map((r, idx) => ({
-                  testCaseNumber: idx + 1,
-                  status: r.status === 'AC' ? 'pass' : 'fail',
-                  input: testCases[idx]?.input || 'N/A',
-                  expectedOutput: testCases[idx]?.output || 'N/A',
-                  actualOutput: r.stdout || '',
-                  stderr: r.stderr || '',
-                  isExample: testCases[idx]?.isExample || false
-                }));
-
-                const passed = formattedResults.filter(r => r.status === 'pass').length;
-                const total = formattedResults.length;
-
-                setQuestionStatuses(prev => ({
-                  ...prev,
-                  [currentQuestionIndex]: {
-                    attempted: true,
-                    passed,
-                    total,
-                    allPassed: passed === total,
-                    correct: passed === total,
-                    attempts: 1,
-                    output: formattedResults,
-                    results: formattedResults.map(r => ({
-                      status: r.status === 'pass' ? 'passed' : 'failed',
-                      input: r.input,
-                      expectedOutput: r.expectedOutput,
-                      actualOutput: r.actualOutput
-                    }))
-                  }
-                }));
-                
-                setCompilerOutput(prev => prev + `✓ Question ${currentQuestionIndex + 1}: ${passed}/${total} test cases passed\n`);
-              }
-            }
-          }
-        } catch (runError) {
-          console.error('Auto-run error:', runError);
-          setCompilerOutput(prev => prev + `⚠️ Could not auto-run Question ${currentQuestionIndex + 1}\n`);
-        }
-      }
-
-      await new Promise(res => setTimeout(res, 500));
-
-      const payload = {
-        name: student.name,
-        email: student.email,
-        batch: student.batch,
-        submittedAt: new Date().toISOString(),
-        testId: test.id,
-        questionResults: Object.entries(questionStatuses).map(([idx, q]) => ({
-          questionId: test.questions[parseInt(idx)].id,
-          correct: q.correct,
-          attempts: q.attempts,
-          output: q.output,
-          results: q.results || []
-        })),
-        tabSwitchCount,
-        copyPasteAttempts
-      };
-
-      console.log('Submitting to:', `http://localhost:8081/api/tests/link/${testToken}/submit-code`);
-      console.log('Payload:', payload);
-
-      const response = await fetch(`http://localhost:8081/api/tests/link/${testToken}/submit-code`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken && { 'Authorization': `Bearer ${authToken}` })
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Submit failed:', response.status, errorText);
-        throw new Error(`Failed to submit test: ${response.status} - ${errorText}`);
-      }
-
-      const savedStudent = await response.json();
-      console.log('Submission successful:', savedStudent);
-
-      setCompilerOutput(prev => prev + '\n✅ Test submitted successfully!\n');
-
-      window.history.pushState(null, '', window.location.href);
-      window.addEventListener('popstate', preventBack);
-
-      setTimeout(() => {
-        navigate('/test-complete', { 
-          state: { 
-            test, 
-            student: savedStudent,
-            questionStatuses,
-            tabSwitchCount,
-            copyPasteAttempts
-          },
-          replace: true
-        });
-      }, 2000);
-
-    } catch (err) {
-      console.error('Submit error:', err);
-      setCompilerOutput(prev => prev + `\n❌ Submission failed: ${err.message}\nPlease try again.\n`);
-      setIsSubmitting(false);
-      setShowSubmitModal(true);
-    }
-  };
-
-  const preventBack = (e) => {
-    window.history.pushState(null, '', window.location.href);
-  };
-
   if (!test || !student) return null;
   const currentQuestion = test.questions[currentQuestionIndex];
   const attemptedCount = Object.keys(questionStatuses).length;
@@ -676,62 +940,52 @@ public:
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-              {test.title}
-            </h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              {student.name} | {student.email}
-            </p>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{test.title}</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{student.name} | {student.email}</p>
           </div>
 
-         <div className="relative">
-  <div className={`flex items-center space-x-3 ${getTimerColor()} transition-colors duration-300`}>
-    <div className="relative">
-      <Clock className="w-8 h-8" />
-      {timeRemaining < 300 && ( // Show pulse animation when less than 5 minutes
-        <div className="absolute inset-0 animate-ping">
-          <Clock className="w-8 h-8 opacity-75" />
-        </div>
-      )}
-    </div>
-    <div className="flex flex-col">
-      <span className="text-3xl font-bold tracking-tight font-mono">
-        {formatTime(timeRemaining)}
-      </span>
-      <span className="text-xs font-medium opacity-75">
-        {timeRemaining < 300 ? 'HURRY UP!' : 'Time Remaining'}
-      </span>
-    </div>
-  </div>
-  
-  {/* Progress bar */}
-  <div className="absolute -bottom-2 left-0 right-0 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-    <div 
-      className={`h-full transition-all duration-1000 ease-linear ${
-        timeRemaining < 300 ? 'bg-red-500 animate-pulse' : 
-        timeRemaining < (test.duration * 60 * 0.25) ? 'bg-yellow-500' : 
-        'bg-emerald-500'
-      }`}
-      style={{ width: `${(timeRemaining / (test.duration * 60)) * 100}%` }}
-    />
-  </div>
-</div>
+          <div className="relative">
+            <div className={`flex items-center space-x-3 ${getTimerColor()} transition-colors duration-300`}>
+              <div className="relative">
+                <Clock className="w-8 h-8" />
+                {timeRemaining < 300 && (
+                  <div className="absolute inset-0 animate-ping">
+                    <Clock className="w-8 h-8 opacity-75" />
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-3xl font-bold tracking-tight font-mono">{formatTime(timeRemaining)}</span>
+                <span className="text-xs font-medium opacity-75">{timeRemaining < 300 ? 'HURRY UP!' : 'Time Remaining'}</span>
+              </div>
+            </div>
+            
+            <div className="absolute -bottom-2 left-0 right-0 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-1000 ease-linear ${
+                  timeRemaining < 300 ? 'bg-red-500 animate-pulse' : 
+                  timeRemaining < (test.duration * 60 * 0.25) ? 'bg-yellow-500' : 
+                  'bg-emerald-500'
+                }`}
+                style={{ width: `${(timeRemaining / (test.duration * 60)) * 100}%` }}
+              />
+            </div>
+          </div>
+
           <div className="flex items-center space-x-4">
-            <div className={`flex items-center space-x-2 ${isProctoringActive ? 'text-green-500' : 'text-red-500'}`}>
+            <div className={`flex items-center space-x-2 ${isProctoringActive ? 'text-green-500' : 'text-gray-400'}`}>
               <Camera className="w-5 h-5" />
               <Mic className="w-5 h-5" />
-              <div className="w-2 h-2 rounded-full bg-current animate-pulse"></div>
+              {isProctoringActive && <div className="w-2 h-2 rounded-full bg-current animate-pulse"></div>}
             </div>
+
             {tabSwitchCount > 0 && (
-              <div className={`flex items-center space-x-2 ${
-                tabSwitchCount >= MAX_TAB_SWITCHES ? 'text-red-500' : 'text-yellow-500'
-              }`}>
+              <div className={`flex items-center space-x-2 ${tabSwitchCount >= MAX_TAB_SWITCHES ? 'text-red-500' : 'text-yellow-500'}`}>
                 <Eye className="w-5 h-5" />
-                <span className="text-sm font-bold">
-                  {tabSwitchCount}/{MAX_TAB_SWITCHES}
-                </span>
+                <span className="text-sm font-bold">{tabSwitchCount}/{MAX_TAB_SWITCHES}</span>
               </div>
             )}
+
             {copyPasteAttempts > 0 && (
               <div className="flex items-center space-x-2 text-red-500">
                 <Shield className="w-5 h-5" />
@@ -742,14 +996,62 @@ public:
         </div>
       </div>
 
+      {/* Video Proctoring Feed */}
       <div className="fixed bottom-4 right-4 z-50">
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          className="w-32 h-24 bg-gray-900 rounded-lg border-2 border-green-400 object-cover"
-        />
+        <div className="relative">
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-48 h-36 bg-gray-900 rounded-lg border-2 border-green-400 object-cover shadow-2xl"
+          />
+          
+          {/* Bounding box overlay canvas */}
+          <canvas
+            ref={proctoringCanvasRef}
+            className="absolute inset-0 w-full h-full pointer-events-none rounded-lg"
+          />
+          
+          {/* Live indicator */}
+          <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold text-white ${isProctoringActive ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}>
+            {isProctoringActive ? 'LIVE' : 'OFF'}
+          </div>
+          
+          {/* Proctoring status indicator */}
+          {isProctoringActive && (
+            <div className="absolute bottom-2 left-2 right-2 text-center">
+              <div className="bg-black/70 backdrop-blur-sm text-white text-xs px-2 py-1 rounded">
+                Keep face in green box
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Violation Alert */}
+      {showViolationAlert && (
+        <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-40 animate-bounce max-w-md">
+          <div className={`px-6 py-4 rounded-xl shadow-2xl font-bold border-2 text-center ${
+            violationType === 'unauthorized_object' || violationType === 'no_face'
+              ? 'bg-red-500 border-red-600 text-white' 
+              : 'bg-yellow-500 border-yellow-600 text-black'
+          }`}>
+            <div className="text-lg">{violationMessage}</div>
+            <div className="text-xs mt-1 opacity-75">Adjust within 15 seconds</div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Switch Warning */}
+      {showTabWarning && tabSwitchCount > 0 && tabSwitchCount < MAX_TAB_SWITCHES && (
+        <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-40 animate-pulse">
+          <div className="bg-yellow-500 text-black px-8 py-4 rounded-xl shadow-2xl font-bold text-center border-2 border-yellow-600">
+            <div className="text-sm mb-1">⚠️ TAB SWITCH DETECTED</div>
+            <div className="text-2xl">{MAX_TAB_SWITCHES - tabSwitchCount} Attempts Remaining</div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto p-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg mb-4 p-4">
@@ -1136,7 +1438,7 @@ public:
                     </p>
                   )}
                   {copyPasteAttempts > 0 && (
-                    <p className="text-xs text-red-600 dark:text-red-400">
+                    <p className="text-xs text-red-600 dark:text-red-400 mb-1">
                       Copy/Paste attempts: {copyPasteAttempts}
                     </p>
                   )}
@@ -1158,14 +1460,6 @@ public:
                 Submit Test
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {tabSwitchCount > 0 && tabSwitchCount < MAX_TAB_SWITCHES && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-40 animate-pulse">
-          <div className="bg-yellow-500 text-black px-6 py-3 rounded-lg shadow-lg font-semibold">
-            Warning: {MAX_TAB_SWITCHES - tabSwitchCount} tab switch{MAX_TAB_SWITCHES - tabSwitchCount !== 1 ? 'es' : ''} remaining before auto-submit!
           </div>
         </div>
       )}

@@ -163,6 +163,7 @@ public class TestService {
                 test.getTitle(),
                 test.getDuration(),
                 test.getCreatedBy(),
+                test.getStatus(),
                 questions
         );
     }
@@ -178,7 +179,23 @@ public class TestService {
                 .map(this::mapToTestDetailsDTO)
                 .collect(Collectors.toList());
     }
+    // Add these methods to your TestService.java
 
+public void startTest(Long testId) {
+    Test test = testRepository.findById(testId)
+        .orElseThrow(() -> new RuntimeException("Test not found"));
+    
+    test.setStatus("active");
+    testRepository.save(test);
+}
+
+public void stopTest(Long testId) {
+    Test test = testRepository.findById(testId)
+        .orElseThrow(() -> new RuntimeException("Test not found"));
+    
+    test.setStatus("completed");
+    testRepository.save(test);
+}
     // --- GENERATE TEST LINK ---
     @Transactional
     public String generateTestLink(Long testId) {

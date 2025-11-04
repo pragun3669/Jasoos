@@ -2,6 +2,7 @@ package com.example.demo.controller;
 
 import java.util.List;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -56,12 +57,20 @@ public class TestController {
     }
 
     @GetMapping("/link/{token}")
-    public ResponseEntity<TestDetailsDTO> getTestByToken(@PathVariable String token) {
+    public ResponseEntity<?> getTestByToken(@PathVariable String token) {
         try {
             TestDetailsDTO test = testService.getTestByLinkToken(token);
+            
+            // Check if test is active
+            if (test.getStatus() != null && !"active".equals(test.getStatus())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body("Test is not active. Please wait for your teacher to start the test.");
+            }
+            
             return ResponseEntity.ok(test);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body("Test not found or link is invalid.");
         }
     }
 
@@ -94,6 +103,7 @@ public class TestController {
         List<Student> students = testService.getStudentsByTest(testId);
         return ResponseEntity.ok(students);
     }
+    
     @DeleteMapping("/{id}")
     public ResponseEntity<String> deleteTest(@PathVariable Long id) {
         try {
@@ -103,7 +113,26 @@ public class TestController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
-    
+
+    @PostMapping("/{testId}/start")
+    public ResponseEntity<String> startTest(@PathVariable Long testId) {
+        try {
+            testService.startTest(testId);
+            return ResponseEntity.ok("Test started successfully");
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/{testId}/stop")
+    public ResponseEntity<String> stopTest(@PathVariable Long testId) {
+        try {
+            testService.stopTest(testId);
+            return ResponseEntity.ok("Test stopped successfully");
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        }
+    }
 
     @GetMapping("/{testId}/results")
     public ResponseEntity<List<StudentResultDTO>> getTestResults(@PathVariable Long testId) {

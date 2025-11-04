@@ -8,7 +8,9 @@ import {
   Calendar,
   Users,
   Clock,
-  MoreHorizontal
+  MoreHorizontal,
+  Play,
+  StopCircle
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import TestPreviewModal from './TestPreviewModal';
@@ -65,19 +67,18 @@ const ViewTests = ({ onNavigate }) => {
         return 'bg-gray-500 text-white';
     }
   };
+
   const handleDeleteTest = async (testId) => {
     if (!window.confirm("Are you sure you want to delete this test?")) return;
   
     try {
-      const res=await fetch(`http://localhost:8081/api/tests/${testId}`, {
+      const res = await fetch(`http://localhost:8081/api/tests/${testId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
   
-  
       if (!res.ok) throw new Error("Failed to delete test");
   
-      // Remove test from state
       setTests((prev) => prev.filter((t) => t.id !== testId));
       alert("Test deleted successfully");
     } catch (err) {
@@ -85,7 +86,48 @@ const ViewTests = ({ onNavigate }) => {
       alert("Error deleting test");
     }
   };
-  
+
+  const handleStartTest = async (testId) => {
+    try {
+      const res = await fetch(`http://localhost:8081/api/tests/${testId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!res.ok) throw new Error("Failed to start test");
+
+      // Update test status in state
+      setTests((prev) => prev.map((t) => 
+        t.id === testId ? { ...t, status: 'active' } : t
+      ));
+      alert("Test started successfully! Students can now access the test.");
+    } catch (err) {
+      console.error(err);
+      alert("Error starting test");
+    }
+  };
+
+  const handleStopTest = async (testId) => {
+    if (!window.confirm("Are you sure you want to stop this test? Students will no longer be able to access it.")) return;
+
+    try {
+      const res = await fetch(`http://localhost:8081/api/tests/${testId}/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!res.ok) throw new Error("Failed to stop test");
+
+      // Update test status in state
+      setTests((prev) => prev.map((t) => 
+        t.id === testId ? { ...t, status: 'completed' } : t
+      ));
+      alert("Test stopped successfully!");
+    } catch (err) {
+      console.error(err);
+      alert("Error stopping test");
+    }
+  };
 
   const getGradientClass = (index) => {
     const gradients = [
@@ -131,7 +173,7 @@ const ViewTests = ({ onNavigate }) => {
       
       const link = await res.text();
       navigator.clipboard.writeText(link);
-      alert(`Test link created and copied to clipboard:\n${link}`);
+      alert(`Test link created and copied to clipboard:\n${link}\n\nNote: Students can only access this link when you start the test.`);
     } catch (err) {
       console.error('Error creating test link:', err);
       alert('Failed to create test link');
@@ -244,44 +286,53 @@ const ViewTests = ({ onNavigate }) => {
                   {test.duration || 0} minutes
                 </div>
                 <div className="flex items-center">
-                  <Users className="w-4 h-4 mr-2" />
-                  {test.totalStudents || 0} students
-                </div>
-                <div className="flex items-center">
                   <MoreHorizontal className="w-4 h-4 mr-2" />
-                  {test.totalQuestions || 0} questions
-                </div>
-                <div className="flex items-center">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Created:{' '}
-                  {test.createdDate
-                    ? new Date(test.createdDate).toLocaleDateString()
-                    : 'N/A'}
+                  {test.questions?.length || 0} questions
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedTest(test)}
-                  className="flex-1 flex items-center justify-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  View
-                </button>
-                <button
-                  onClick={() => handleCreateLink(test)}
-                  className="flex-1 flex items-center justify-center gap-1 border border-green-400 text-green-500 hover:bg-green-400 hover:text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Users className="w-4 h-4" />
-                  Link
-                </button>
-                <button
-  onClick={() => handleDeleteTest(test.id)}
-  className="flex items-center justify-center border border-red-500 text-red-500 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
->
-  <Trash2 className="w-4 h-4" />
-</button>
+              <div className="flex flex-col gap-2">
+                {/* Start/Stop Test Button */}
+                {test.status === 'active' ? (
+                  <button
+                    onClick={() => handleStopTest(test.id)}
+                    className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <StopCircle className="w-4 h-4" />
+                    Stop Test
+                  </button>
+                ) : test.status === 'draft' || test.status === 'completed' ? (
+                  <button
+                    onClick={() => handleStartTest(test.id)}
+                    className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Play className="w-4 h-4" />
+                    Start Test
+                  </button>
+                ) : null}
 
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedTest(test)}
+                    className="flex-1 flex items-center justify-center gap-1 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View
+                  </button>
+                  <button
+                    onClick={() => handleCreateLink(test)}
+                    className="flex-1 flex items-center justify-center gap-1 border border-green-400 text-green-500 hover:bg-green-400 hover:text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Users className="w-4 h-4" />
+                    Link
+                  </button>
+                  <button
+                    onClick={() => handleDeleteTest(test.id)}
+                    className="flex items-center justify-center border border-red-500 text-red-500 hover:bg-red-500 hover:text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

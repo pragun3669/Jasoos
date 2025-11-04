@@ -37,13 +37,21 @@ const StudentPage = () => {
           if (response.status === 404) {
             throw new Error('Test not found. The link may be invalid or expired.');
           } else if (response.status === 403) {
-            throw new Error('This test is not accessible at the moment.');
+            throw new Error('This test has not been started yet. Please wait for your teacher to activate the test.');
           } else {
             throw new Error(`Failed to load test: ${response.statusText}`);
           }
         }
 
         const data = await response.json();
+        
+        // Check if test is active
+        if (data.status !== 'active') {
+          setError('This test has not been started yet. Please wait for your teacher to activate the test.');
+          setLoading(false);
+          return;
+        }
+        
         setTest(data);
       } catch (err) {
         console.error('Error fetching test:', err);
@@ -109,18 +117,16 @@ const StudentPage = () => {
       const registeredStudent = await response.json();
       console.log('Registration successful:', registeredStudent);
 
-      // Navigate to editor with test data
-      // Navigate to DeviceCheck page after registration
-setTimeout(() => {
-    navigate('/device-check', { 
-      state: { 
-        test: test, 
-        student: registeredStudent,
-        testLinkToken: token
-      } 
-    });
-  }, 1000);
-  
+      // Navigate to device check page
+      setTimeout(() => {
+        navigate('/device-check', { 
+          state: { 
+            test: test, 
+            student: registeredStudent,
+            testLinkToken: token
+          } 
+        });
+      }, 1000);
 
     } catch (error) {
       console.error('Registration error:', error);
@@ -146,26 +152,21 @@ setTimeout(() => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-black flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
-          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-yellow-600 dark:text-yellow-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Unable to Load Test</h2>
-          <p className="text-red-600 dark:text-red-400 mb-6">{error}</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Test Not Available</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
           <div className="space-y-3">
             <button
               onClick={() => window.location.reload()}
               className="w-full px-4 py-2 bg-green-400 hover:bg-green-500 text-black font-semibold rounded-lg transition-colors"
             >
-              Try Again
+              Check Again
             </button>
-            <button
-              onClick={() => navigate('/')}
-              className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold rounded-lg transition-colors"
-            >
-              Go to Home
-            </button>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Contact your teacher if the problem persists
+            </p>
           </div>
         </div>
       </div>
