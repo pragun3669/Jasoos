@@ -36,6 +36,7 @@ const TeacherTestResultsPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDuration, setFilterDuration] = useState("all");
   const [expandedStudent, setExpandedStudent] = useState(null);
+  const [expandedCode, setExpandedCode] = useState([]);
   const [error, setError] = useState(null);
 
   const API_BASE_URL = 'http://localhost:8081/api';
@@ -44,6 +45,47 @@ const TeacherTestResultsPage = () => {
     fetchTeacherTests();
   }, [teacherId, token]);
 
+  const normalizeDate = (value) => {
+    if (!value) return null;
+  
+    try {
+      let str = value.toString().trim();
+  
+      // Replace space with T for ISO compliance
+      str = str.replace(" ", "T");
+  
+      // Trim nanoseconds → keep only 3 digits (milliseconds)
+      if (str.includes(".")) {
+        const [datePart, msPart] = str.split(".");
+        const ms = msPart.substring(0, 3); // keep first 3 digits only
+        str = `${datePart}.${ms}`;
+      }
+  
+      const date = new Date(str);
+      return isNaN(date.getTime()) ? null : date;
+    } catch {
+      return null;
+    }
+  };
+  
+  const formatDate = (value) => {
+    const date = normalizeDate(value);
+    return date ? date.toLocaleDateString() : "N/A";
+  };
+  
+  const formatDateTime = (value) => {
+    const date = normalizeDate(value);
+    return date
+      ? date.toLocaleString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit"
+        })
+      : "Not submitted";
+  };
+    
   const fetchTeacherTests = async () => {
     try {
       setLoading(true);
@@ -56,42 +98,43 @@ const TeacherTestResultsPage = () => {
 
       if (!response.ok) throw new Error('Failed to fetch tests');
       const data = await response.json();
+      
+      console.log('Fetched tests:', data);
 
-      // Fetch student counts for each test
       const testsWithCounts = await Promise.all(
         data.map(async (test) => {
           try {
-            const studentsResponse = await fetch(`${API_BASE_URL}/tests/${test.id}/students`, {
+            const resultsResponse = await fetch(`${API_BASE_URL}/tests/${test.id}/results`, {
               headers: { Authorization: `Bearer ${token}` }
             });
-            const students = studentsResponse.ok ? await studentsResponse.json() : [];
-
-            const submittedCount = students.filter(s => s.submittedAt != null).length;
-
+      
+            const results = resultsResponse.ok ? await resultsResponse.json() : [];
+      
+            const submittedCount = results.filter(r => r.status === "Submitted").length;
+      
             return {
               id: test.id,
               title: test.title,
               duration: test.duration,
-              numberOfQuestions: test.questions ? test.questions.length : 0,
-              createdDate: test.createdDate || new Date().toISOString(),
-              totalStudents: students.length,
-              submittedCount: submittedCount
+              numberOfQuestions: test.questions?.length || 0,
+              createdDate: test.createdDate,
+              totalStudents: results.length,
+              submittedCount
             };
           } catch (err) {
-            console.error(`Error fetching students for test ${test.id}:`, err);
             return {
               id: test.id,
               title: test.title,
               duration: test.duration,
-              numberOfQuestions: test.questions ? test.questions.length : 0,
-              createdDate: test.createdDate || new Date().toISOString(),
+              numberOfQuestions: test.questions?.length || 0,
+              createdDate: test.createdDate,
               totalStudents: 0,
               submittedCount: 0
             };
           }
         })
       );
-
+      
       setTests(testsWithCounts);
     } catch (err) {
       setError('Failed to fetch tests. Please ensure the backend is running and you are logged in.');
@@ -116,9 +159,51 @@ const TeacherTestResultsPage = () => {
       if (!response.ok) throw new Error('Failed to fetch test results');
 
       const data = await response.json();
-      console.log('Test Results API Response:', data);
+      console.log("🔥 RAW RESULT:", data);
 
-      setTestResults(data);
+      const processedData = data.map(result => {
+        const questionResults = result.questionResults || [];
+        
+        // Calculate total score as AVERAGE of all question scores (each question is out of 100)
+        let totalScore = 0;
+        if (questionResults.length > 0) {
+          const sumOfScores = questionResults.reduce((sum, q) => {
+            // Each question score is already out of 100 (earnedPoints)
+            return sum + (q.earnedPoints || 0);
+          }, 0);
+          totalScore = sumOfScores / questionResults.length; // Average
+        }
+
+        // Process each question to ensure correct/incorrect status matches score
+        const processedQuestionResults = questionResults.map(q => {
+          const earnedPoints = q.earnedPoints || 0;
+          const questionMarks = q.questionMarks || 100;
+          
+          // A question is correct if student earned 100% of marks
+          const isCorrect = earnedPoints >= questionMarks;
+          
+          return {
+            ...q,
+            earnedPoints,
+            questionMarks,
+            correct: isCorrect,
+            // Calculate percentage for this question
+            percentage: questionMarks > 0 ? (earnedPoints / questionMarks) * 100 : 0
+          };
+        });
+
+        return {
+          ...result,
+          score: parseFloat(totalScore.toFixed(2)), // Round to 2 decimal places
+          totalMarks: 100,   // Total is always out of 100
+          tabSwitchCount: result.tabSwitchCount ?? 0,
+          copyPasteAttempts: result.copyPasteAttempts ?? 0,
+          questionResults: processedQuestionResults
+        };
+      });
+
+      console.log("✅ PROCESSED RESULTS:", processedData);
+      setTestResults(processedData);
     } catch (err) {
       setError('Failed to fetch test results. Please try again.');
       console.error(err);
@@ -138,10 +223,8 @@ const TeacherTestResultsPage = () => {
   
       if (!res.ok) throw new Error("Failed to delete test");
   
-      // Remove test from state
       setTests((prev) => prev.filter((t) => t.id !== testId));
       
-      // If the deleted test is currently selected, go back to tests list
       if (selectedTest && selectedTest.id === testId) {
         handleBackToTests();
       }
@@ -150,6 +233,7 @@ const TeacherTestResultsPage = () => {
       setError("Error deleting test. Please try again.");
     }
   };
+
   const handleViewResults = (test) => {
     setSelectedTest(test);
     fetchTestResults(test.id);
@@ -159,6 +243,7 @@ const TeacherTestResultsPage = () => {
     setSelectedTest(null);
     setTestResults([]);
     setExpandedStudent(null);
+    setExpandedCode([]);
   };
 
   const getScoreColor = (score, totalMarks) => {
@@ -220,9 +305,9 @@ const TeacherTestResultsPage = () => {
       result.batch || 'N/A',
       result.status,
       result.score || 0,
-      result.totalMarks || 0,
+      result.totalMarks || 100,
       result.totalMarks ? Math.round((result.score / result.totalMarks) * 100) + '%' : '0%',
-      result.submissionTime ? new Date(result.submissionTime).toLocaleString() : 'Not submitted',
+      formatDateTime(result.submittedAt),
       result.tabSwitchCount || 0,
       result.copyPasteAttempts || 0
     ]);
@@ -258,7 +343,6 @@ const TeacherTestResultsPage = () => {
 
         {!selectedTest ? (
           <>
-            {/* Header */}
             <div className="mb-8">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -279,7 +363,6 @@ const TeacherTestResultsPage = () => {
               </div>
             </div>
 
-            {/* Search and Filter */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg mb-8 p-6 border border-gray-200 dark:border-gray-700">
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
@@ -337,7 +420,6 @@ const TeacherTestResultsPage = () => {
               </div>
             </div>
 
-            {/* Error Message */}
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
                 <div className="flex items-center">
@@ -347,7 +429,6 @@ const TeacherTestResultsPage = () => {
               </div>
             )}
 
-            {/* Tests Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {filteredTests.map((test, index) => (
                 <div
@@ -384,7 +465,7 @@ const TeacherTestResultsPage = () => {
                       </div>
                       <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                         <Calendar className="w-4 h-4 mr-2" />
-                        <span>Created: {new Date(test.createdDate).toLocaleDateString()}</span>
+                        <span>Created: {formatDate(test.createdDate)}</span>
                       </div>
                     </div>
 
@@ -402,22 +483,21 @@ const TeacherTestResultsPage = () => {
                     </div>
                  
                     <div className="flex gap-2 mt-4">
-  <button
-    onClick={() => handleViewResults(test)}
-    className="flex-1 bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 text-white font-medium py-3 px-4 rounded-lg transition-all hover:scale-105 flex items-center justify-center"
-  >
-    <Eye className="w-4 h-4 mr-2" />
-    View Results
-  </button>
+                      <button
+                        onClick={() => handleViewResults(test)}
+                        className="flex-1 bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 text-white font-medium py-3 px-4 rounded-lg transition-all hover:scale-105 flex items-center justify-center"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Results
+                      </button>
 
-  <button
-    onClick={() => handleDeleteTest(test.id)}
-    className="flex-1 flex items-center justify-center border border-red-500 text-red-500 hover:bg-red-500 hover:text-white py-3 px-4 rounded-lg text-sm font-medium transition-colors"
-  >
-    <Trash2 className="w-4 h-4 mr-2" />
-  </button>
-</div>
-
+                      <button
+                        onClick={() => handleDeleteTest(test.id)}
+                        className="flex-1 flex items-center justify-center border border-red-500 text-red-500 hover:bg-red-500 hover:text-white py-3 px-4 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -442,7 +522,6 @@ const TeacherTestResultsPage = () => {
           </>
         ) : (
           <>
-            {/* Results Header */}
             <div className="mb-8">
               <button
                 onClick={handleBackToTests}
@@ -553,11 +632,11 @@ const TeacherTestResultsPage = () => {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center">
-                                <span className={`text-sm font-medium ${getScoreColor(result.score, result.totalMarks)}`}>
-                                  {result.score || 0}/{result.totalMarks || 0}
+                                <span className={`text-sm font-medium ${getScoreColor(result.score, 100)}`}>
+                                  {result.score?.toFixed(1) || 0}/100
                                 </span>
-                                <span className={`ml-2 px-2 py-1 text-xs font-medium rounded-full ${getScoreBadgeColor(result.score, result.totalMarks)}`}>
-                                  {result.totalMarks ? Math.round((result.score / result.totalMarks) * 100) : 0}%
+                                <span className={`ml-2 px-2 py-1 text-xs font-medium rounded-full ${getScoreBadgeColor(result.score, 100)}`}>
+                                  {Math.round((result.score / 100) * 100)}%
                                 </span>
                               </div>
                             </td>
@@ -582,17 +661,19 @@ const TeacherTestResultsPage = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                              {result.submissionTime
-                                ? new Date(result.submissionTime).toLocaleString()
-                                : 'Not submitted'
-                              }
+                            {formatDateTime(result.submittedAt)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               {result.status === 'Submitted' && (
                                 <button
-                                  onClick={() => setExpandedStudent(
-                                    expandedStudent === result.studentId ? null : result.studentId
-                                  )}
+                                  onClick={() => {
+                                    if (expandedStudent === result.studentId) {
+                                      setExpandedStudent(null);
+                                      setExpandedCode([]);
+                                    } else {
+                                      setExpandedStudent(result.studentId);
+                                    }
+                                  }}
                                   className="text-green-400 hover:text-green-600 transition-colors flex items-center"
                                 >
                                   {expandedStudent === result.studentId ? (
@@ -606,271 +687,344 @@ const TeacherTestResultsPage = () => {
                             </td>
                           </tr>
 
-                          {/* Expanded Question Results */}
                           {expandedStudent === result.studentId && result.questionResults && (
                             <tr>
-                              <td colSpan="7" className="px-6 py-6 bg-gray-50 dark:bg-gray-700">
-                                <div className="space-y-4">
-                                  <h4 className="font-semibold text-gray-900 dark:text-white flex items-center text-lg mb-4">
-                                    <Target className="w-5 h-5 mr-2" />
-                                    Question-wise Performance
-                                  </h4>
-                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    {result.questionResults.map((qResult, idx) => (
-                                      <div
-                                        key={idx}
-                                        className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-4"
-                                      >
-                                        <div className="flex items-start justify-between mb-3">
-                                          <div className="flex-1">
-                                            <div className="flex items-center space-x-2 mb-2">
-                                              <span className="font-medium text-gray-900 dark:text-white">
-                                                Question {idx + 1}
-                                              </span>
-                                              {qResult.correct ? (
-                                                <CheckCircle className="w-4 h-4 text-green-500" />
-                                              ) : (
-                                                <XCircle className="w-4 h-4 text-red-500" />
-                                              )}
+                              <td colSpan="7" className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900">
+                                <div className="p-8">
+                                  <div className="space-y-6">
+                                    <div className="flex items-center justify-between pb-4 border-b-2 border-gray-300 dark:border-gray-600">
+                                      <h4 className="text-xl font-bold text-gray-900 dark:text-white flex items-center">
+                                        <div className="p-2 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg mr-3">
+                                          <Target className="w-6 h-6 text-white" />
+                                        </div>
+                                        Question-wise Performance Analysis
+                                      </h4>
+                                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                                        {result.questionResults.length} Questions
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                      {result.questionResults.map((qResult, idx) => (
+                                        <div
+                                          key={idx}
+                                          className="bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border-2 border-gray-200 dark:border-gray-700 overflow-hidden"
+                                        >
+                                          <div className={`p-4 border-b-2 ${
+                                            qResult.correct 
+                                              ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 border-green-200 dark:border-green-700' 
+                                              : 'bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/30 dark:to-orange-900/30 border-red-200 dark:border-red-700'
+                                          }`}>
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center space-x-3">
+                                                <div className={`p-2 rounded-lg ${
+                                                  qResult.correct 
+                                                    ? 'bg-green-500' 
+                                                    : 'bg-red-500'
+                                                }`}>
+                                                  <span className="text-white font-bold text-lg">
+                                                    Q{idx + 1}
+                                                  </span>
+                                                </div>
+                                                {qResult.correct ? (
+                                                  <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
+                                                ) : (
+                                                  <XCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                                                )}
+                                                <span className={`font-semibold ${
+                                                  qResult.correct 
+                                                    ? 'text-green-700 dark:text-green-300' 
+                                                    : 'text-red-700 dark:text-red-300'
+                                                }`}>
+                                                  {qResult.correct ? 'Correct' : 'Incorrect'}
+                                                </span>
+                                              </div>
+                                              <div className="text-right">
+                                                <div className={`text-2xl font-bold ${
+                                                  qResult.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                                                }`}>
+                                                  {qResult.earnedPoints?.toFixed(1) || 0}
+                                                </div>
+                                                <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                                                  / {qResult.questionMarks || 100} points
+                                                </div>
+                                              </div>
                                             </div>
-                                            <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
-                                              {qResult.questionDescription || 'No description'}
+                                          </div>
+
+                                          <div className="p-5 space-y-4">
+                                            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                                                {qResult.questionDescription || 'No description available'}
+                                              </p>
+                                            </div>
+
+                                            {qResult.language && (
+                                              <div className="flex items-center space-x-2">
+                                                <Code className="w-4 h-4 text-blue-500" />
+                                                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-full text-xs font-semibold">
+                                                  {qResult.language.toUpperCase()}
+                                                </span>
+                                              </div>
+                                            )}
+
+                                            <div className="space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                  Test Cases Passed
+                                                </span>
+                                                <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                                  {qResult.passedTestCases || 0} / {qResult.totalTestCases || 0}
+                                                </span>
+                                              </div>
+                                              <div className="relative w-full h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                                <div
+                                                  className={`absolute top-0 left-0 h-full rounded-full transition-all duration-500 ${
+                                                    qResult.correct
+                                                      ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                                                      : 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                                                  }`}
+                                                  style={{
+                                                    width: `${qResult.totalTestCases > 0
+                                                      ? (qResult.passedTestCases / qResult.totalTestCases) * 100
+                                                      : 0}%`
+                                                  }}
+                                                ></div>
+                                              </div>
+                                              <div className="flex items-center justify-between text-xs">
+                                                <span className="text-gray-500 dark:text-gray-400">
+                                                  Attempts: {qResult.attempts || 0}
+                                                </span>
+                                                <span className={`font-semibold ${
+                                                  qResult.correct ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'
+                                                }`}>
+                                                  {qResult.totalTestCases > 0
+                                                    ? Math.round((qResult.passedTestCases / qResult.totalTestCases) * 100)
+                                                    : 0}% Success
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            {qResult.submittedCode && (
+                                              <button
+                                                onClick={() => {
+                                                  const key = `${result.studentId}-q${idx}`;
+                                                  setExpandedCode(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+                                                  if (expandedStudent !== result.studentId) setExpandedStudent(result.studentId);
+                                                }}
+                                                className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg font-medium transition-all hover:shadow-lg flex items-center justify-center group"
+                                              >
+                                                <Code className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                                                {expandedCode.includes(`${result.studentId}-q${idx}`) ? 'Hide' : 'View'} Code & Test Cases
+                                              </button>
+                                            )}
+
+                                            {expandedCode.includes(`${result.studentId}-q${idx}`) && (
+                                              <div className="mt-4 space-y-4 border-t-2 border-gray-200 dark:border-gray-700 pt-4 animate-fadeIn">
+                                                {qResult.submittedCode && (
+                                                  <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                      <h6 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                                                        <Code className="w-4 h-4 mr-2 text-blue-500" />
+                                                        Submitted Code
+                                                      </h6>
+                                                      <span className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium">
+                                                        {qResult.language || 'Unknown'}
+                                                      </span>
+                                                    </div>
+                                                    <div className="relative rounded-lg overflow-hidden border-2 border-gray-300 dark:border-gray-600">
+                                                      <pre className="bg-gray-900 text-gray-100 p-4 overflow-x-auto text-sm leading-relaxed max-h-96">
+                                                        <code className="font-mono">{qResult.submittedCode}</code>
+                                                      </pre>
+                                                    </div>
+                                                  </div>
+                                                )}
+
+                                                {qResult.testCaseResults && qResult.testCaseResults.length > 0 && (
+                                                  <div className="space-y-3">
+                                                    <h6 className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center">
+                                                      <Target className="w-4 h-4 mr-2 text-purple-500" />
+                                                      Test Case Results ({qResult.testCaseResults.length})
+                                                    </h6>
+                                                    <div className="space-y-3">
+                                                      {qResult.testCaseResults.map((tc, tcIdx) => (
+                                                        <div
+                                                          key={tcIdx}
+                                                          className={`rounded-lg border-2 overflow-hidden transition-all hover:shadow-md ${
+                                                            tc.passed
+                                                              ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                                                              : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                                                          }`}
+                                                        >
+                                                          <div className={`px-4 py-2 border-b-2 ${
+                                                            tc.passed 
+                                                              ? 'bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700' 
+                                                              : 'bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700'
+                                                          }`}>
+                                                            <div className="flex items-center justify-between">
+                                                              <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                                                                Test Case {tcIdx + 1}
+                                                              </span>
+                                                              <div className="flex items-center space-x-2">
+                                                                {tc.executionTime && (
+                                                                  <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                                                                    ⏱️ {tc.executionTime}ms
+                                                                  </span>
+                                                                )}
+                                                                {tc.passed ? (
+                                                                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                                                                ) : (
+                                                                  <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                                                )}
+                                                              </div>
+                                                            </div>
+                                                          </div>
+
+                                                          <div className="p-3 space-y-3">
+                                                            {tc.input && (
+                                                              <div>
+                                                                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                                                                  📥 Input:
+                                                                </span>
+                                                                <pre className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 p-2 rounded text-xs overflow-x-auto font-mono">
+                                                                  {tc.input}
+                                                                </pre>
+                                                              </div>
+                                                            )}
+
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                              {tc.expectedOutput && (
+                                                                <div>
+                                                                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                                                                    ✅ Expected:
+                                                                  </span>
+                                                                  <pre className="bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 p-2 rounded text-xs overflow-x-auto font-mono text-green-900 dark:text-green-200">
+                                                                    {tc.expectedOutput}
+                                                                  </pre>
+                                                                </div>
+                                                              )}
+
+                                                              {tc.actualOutput && (
+                                                                <div>
+                                                                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                                                                    📤 Got:
+                                                                  </span>
+                                                                  <pre className={`border p-2 rounded text-xs overflow-x-auto font-mono ${
+                                                                    tc.passed
+                                                                      ? 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-900 dark:text-green-200'
+                                                                      : 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-900 dark:text-red-200'
+                                                                  }`}>
+                                                                    {tc.actualOutput}
+                                                                  </pre>
+                                                                </div>
+                                                              )}
+                                                            </div>
+
+                                                            {tc.error && (
+                                                              <div>
+                                                                <span className="text-xs font-semibold text-red-700 dark:text-red-300 block mb-1 flex items-center">
+                                                                  <AlertTriangle className="w-3 h-3 mr-1" />
+                                                                  Error:
+                                                                </span>
+                                                                <pre className="bg-red-100 dark:bg-red-900/30 border-2 border-red-400 dark:border-red-700 p-2 rounded text-xs overflow-x-auto text-red-900 dark:text-red-200 font-mono">
+                                                                  {tc.error}
+                                                                </pre>
+                                                              </div>
+                                                            )}
+                                                          </div>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+
+                                    {(result.tabSwitchCount > 0 || result.copyPasteAttempts > 0) && (
+                                      <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border-2 border-yellow-300 dark:border-yellow-700 rounded-xl p-5 shadow-md">
+                                        <h5 className="font-bold text-gray-900 dark:text-white flex items-center mb-4 text-lg">
+                                          <div className="p-2 bg-yellow-500 rounded-lg mr-3">
+                                            <Shield className="w-5 h-5 text-white" />
+                                          </div>
+                                          Proctoring Violations Detected
+                                        </h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {result.tabSwitchCount > 0 && (
+                                            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border-2 border-yellow-300 dark:border-yellow-700 flex items-center space-x-3">
+                                              <div className="p-2 bg-yellow-100 dark:bg-yellow-900/50 rounded-lg">
+                                                <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-600 dark:text-gray-400 text-sm block">Tab Switches</span>
+                                                <span className="text-2xl font-bold text-gray-900 dark:text-white">{result.tabSwitchCount}</span>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {result.copyPasteAttempts > 0 && (
+                                            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border-2 border-red-300 dark:border-red-700 flex items-center space-x-3">
+                                              <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+                                                <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-600 dark:text-gray-400 text-sm block">Copy/Paste Attempts</span>
+                                                <span className="text-2xl font-bold text-gray-900 dark:text-white">{result.copyPasteAttempts}</span>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                      <div className="bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-xl p-5 border-2 border-green-300 dark:border-green-700 shadow-md hover:shadow-lg transition-shadow">
+                                        <div className="flex items-center justify-between">
+                                          <div>
+                                            <p className="text-sm font-semibold text-green-700 dark:text-green-300 mb-1">Total Score</p>
+                                            <p className="text-3xl font-bold text-green-900 dark:text-green-100">
+                                              {result.score?.toFixed(1) || 0}
+                                            </p>
+                                            <p className="text-xs text-green-600 dark:text-green-400 mt-1">out of {result.totalMarks || 100}</p>
+                                          </div>
+                                          <div className="p-3 bg-green-500 rounded-xl">
+                                            <Award className="w-8 h-8 text-white" />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-xl p-5 border-2 border-blue-300 dark:border-blue-700 shadow-md hover:shadow-lg transition-shadow">
+                                        <div className="flex items-center justify-between">
+                                          <div>
+                                            <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 mb-1">Questions Solved</p>
+                                            <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">
+                                              {result.questionResults?.filter(q => q.correct).length || 0}
+                                            </p>
+                                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                              out of {result.questionResults?.length || 0}
                                             </p>
                                           </div>
-                                          <div className="ml-3 text-right">
-                                            <div className={`text-lg font-bold ${
-                                              qResult.correct ? 'text-green-500' : 'text-red-500'
-                                            }`}>
-                                              {qResult.earnedPoints?.toFixed(1) || 0}
-                                            </div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                                              / {qResult.questionMarks || 0} pts
-                                            </div>
+                                          <div className="p-3 bg-blue-500 rounded-xl">
+                                            <Target className="w-8 h-8 text-white" />
                                           </div>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                          {/* Language Badge */}
-                                          {qResult.language && (
-                                            <div className="flex items-center text-xs mb-2">
-                                              <Code className="w-3 h-3 mr-1 text-gray-500 dark:text-gray-400" />
-                                              <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
-                                                {qResult.language}
-                                              </span>
-                                            </div>
-                                          )}
-
-                                          <div className="flex items-center justify-between text-sm">
-                                            <span className="text-gray-600 dark:text-gray-400">Test Cases:</span>
-                                            <span className="font-medium text-gray-900 dark:text-white">
-                                              {qResult.passedTestCases || 0}/{qResult.totalTestCases || 0} passed
-                                            </span>
-                                          </div>
-                                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                                            <div
-                                              className={`h-2 rounded-full transition-all ${
-                                                qResult.correct
-                                                  ? 'bg-green-500'
-                                                  : 'bg-yellow-500'
-                                              }`}
-                                              style={{
-                                                width: `${qResult.totalTestCases > 0
-                                                  ? (qResult.passedTestCases / qResult.totalTestCases) * 100
-                                                  : 0}%`
-                                              }}
-                                            ></div>
-                                          </div>
-
-                                          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                                            <span>Attempts: {qResult.attempts || 0}</span>
-                                            <span>
-                                              {qResult.totalTestCases > 0
-                                                ? Math.round((qResult.passedTestCases / qResult.totalTestCases) * 100)
-                                                : 0}% accuracy
-                                            </span>
-                                          </div>
-
-                                          {/* View Details Button */}
-                                          {qResult.submittedCode && (
-                                            <button
-                                              onClick={() => setExpandedStudent(
-                                                expandedStudent === `${result.studentId}-q${idx}`
-                                                  ? result.studentId
-                                                  : `${result.studentId}-q${idx}`
-                                              )}
-                                              className="w-full mt-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors flex items-center justify-center"
-                                            >
-                                              <Code className="w-3 h-3 mr-1" />
-                                              {expandedStudent === `${result.studentId}-q${idx}` ? 'Hide' : 'View'} Code & Test Cases
-                                            </button>
-                                          )}
-
-                                          {/* Expanded Code Section */}
-                                          {expandedStudent === `${result.studentId}-q${idx}` && (
-                                            <div className="mt-4 space-y-3 border-t border-gray-200 dark:border-gray-600 pt-4">
-                                              {/* Submitted Code */}
-                                              {qResult.submittedCode && (
-                                                <div>
-                                                  <h6 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                                                    <Code className="w-3 h-3 mr-1" />
-                                                    Submitted Code ({qResult.language || 'Unknown'})
-                                                  </h6>
-                                                  <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto max-h-64 whitespace-pre-wrap">
-                                                    <code>{qResult.submittedCode}</code>
-                                                  </pre>
-                                                </div>
-                                              )}
-
-                                              {/* Test Cases Details */}
-                                              {qResult.testCaseResults && qResult.testCaseResults.length > 0 && (
-                                                <div>
-                                                  <h6 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                                                    Test Case Results
-                                                  </h6>
-                                                  <div className="space-y-2">
-                                                    {qResult.testCaseResults.map((tc, tcIdx) => (
-                                                      <div
-                                                        key={tcIdx}
-                                                        className={`p-3 rounded border ${
-                                                          tc.passed
-                                                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                                                            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                                                        }`}
-                                                      >
-                                                        <div className="flex items-center justify-between mb-2">
-                                                          <span className="text-xs font-medium text-gray-900 dark:text-white">
-                                                            Test Case {tcIdx + 1}
-                                                          </span>
-                                                          {tc.passed ? (
-                                                            <CheckCircle className="w-4 h-4 text-green-500" />
-                                                          ) : (
-                                                            <XCircle className="w-4 h-4 text-red-500" />
-                                                          )}
-                                                        </div>
-
-                                                        {tc.input && (
-                                                          <div className="mb-2">
-                                                            <span className="text-xs text-gray-600 dark:text-gray-400">Input:</span>
-                                                            <pre className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-xs mt-1 overflow-x-auto">
-                                                              {tc.input}
-                                                            </pre>
-                                                          </div>
-                                                        )}
-
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                          {tc.expectedOutput && (
-                                                            <div>
-                                                              <span className="text-xs text-gray-600 dark:text-gray-400">Expected:</span>
-                                                              <pre className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-xs mt-1 overflow-x-auto">
-                                                                {tc.expectedOutput}
-                                                              </pre>
-                                                            </div>
-                                                          )}
-
-                                                          {tc.actualOutput && (
-                                                            <div>
-                                                              <span className="text-xs text-gray-600 dark:text-gray-400">Got:</span>
-                                                              <pre className={`p-2 rounded text-xs mt-1 overflow-x-auto ${
-                                                                tc.passed
-                                                                  ? 'bg-green-100 dark:bg-green-800'
-                                                                  : 'bg-red-100 dark:bg-red-800'
-                                                              }`}>
-                                                                {tc.actualOutput}
-                                                              </pre>
-                                                            </div>
-                                                          )}
-                                                        </div>
-
-                                                        {tc.error && (
-                                                          <div className="mt-2">
-                                                            <span className="text-xs text-red-600 dark:text-red-400">Error:</span>
-                                                            <pre className="bg-red-100 dark:bg-red-900 p-2 rounded text-xs mt-1 overflow-x-auto text-red-800 dark:text-red-200">
-                                                              {tc.error}
-                                                            </pre>
-                                                          </div>
-                                                        )}
-
-                                                        {tc.executionTime && (
-                                                          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                                                            Execution time: {tc.executionTime}ms
-                                                          </div>
-                                                        )}
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                </div>
-                                              )}
-                                            </div>
-                                          )}
                                         </div>
                                       </div>
-                                    ))}
-                                  </div>
 
-                                  {/* Proctoring Information */}
-                                  {(result.tabSwitchCount > 0 || result.copyPasteAttempts > 0) && (
-                                    <div className="mt-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-                                      <h5 className="font-medium text-gray-900 dark:text-white flex items-center mb-3">
-                                        <Shield className="w-4 h-4 mr-2 text-yellow-600 dark:text-yellow-400" />
-                                        Proctoring Violations
-                                      </h5>
-                                      <div className="grid grid-cols-2 gap-4 text-sm">
-                                        {result.tabSwitchCount > 0 && (
-                                          <div className="flex items-center">
-                                            <AlertTriangle className="w-4 h-4 mr-2 text-yellow-600 dark:text-yellow-400" />
-                                            <span className="text-gray-700 dark:text-gray-300">
-                                              Tab Switches: <strong>{result.tabSwitchCount}</strong>
-                                            </span>
+                                      <div className="bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/40 dark:to-pink-900/40 rounded-xl p-5 border-2 border-purple-300 dark:border-purple-700 shadow-md hover:shadow-lg transition-shadow">
+                                        <div className="flex items-center justify-between">
+                                          <div>
+                                            <p className="text-sm font-semibold text-purple-700 dark:text-purple-300 mb-1">Success Rate</p>
+                                            <p className="text-3xl font-bold text-purple-900 dark:text-purple-100">
+                                              {result.totalMarks ? Math.round((result.score / result.totalMarks) * 100) : 0}%
+                                            </p>
+                                            <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Overall performance</p>
                                           </div>
-                                        )}
-                                        {result.copyPasteAttempts > 0 && (
-                                          <div className="flex items-center">
-                                            <AlertTriangle className="w-4 h-4 mr-2 text-red-600 dark:text-red-400" />
-                                            <span className="text-gray-700 dark:text-gray-300">
-                                              Copy/Paste Attempts: <strong>{result.copyPasteAttempts}</strong>
-                                            </span>
+                                          <div className="p-3 bg-purple-500 rounded-xl">
+                                            <Trophy className="w-8 h-8 text-white" />
                                           </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Summary Stats */}
-                                  <div className="mt-6 grid grid-cols-3 gap-4">
-                                    <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
-                                      <div className="flex items-center justify-between">
-                                        <div>
-                                          <p className="text-xs text-green-700 dark:text-green-300 mb-1">Total Score</p>
-                                          <p className="text-2xl font-bold text-green-900 dark:text-green-100">
-                                            {result.score || 0}
-                                          </p>
                                         </div>
-                                        <Award className="w-8 h-8 text-green-500" />
-                                      </div>
-                                    </div>
-
-                                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                                      <div className="flex items-center justify-between">
-                                        <div>
-                                          <p className="text-xs text-blue-700 dark:text-blue-300 mb-1">Questions</p>
-                                          <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                                            {result.questionResults?.filter(q => q.correct).length || 0}/
-                                            {result.questionResults?.length || 0}
-                                          </p>
-                                        </div>
-                                        <Target className="w-8 h-8 text-blue-500" />
-                                      </div>
-                                    </div>
-
-                                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                                      <div className="flex items-center justify-between">
-                                        <div>
-                                          <p className="text-xs text-purple-700 dark:text-purple-300 mb-1">Percentage</p>
-                                          <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-                                            {result.totalMarks ? Math.round((result.score / result.totalMarks) * 100) : 0}%
-                                          </p>
-                                        </div>
-                                        <Trophy className="w-8 h-8 text-purple-500" />
                                       </div>
                                     </div>
                                   </div>

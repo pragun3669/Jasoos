@@ -32,6 +32,7 @@ const StudentPage = () => {
         setError('');
 
         const response = await fetch(`http://localhost:8081/api/tests/link/${token}`);
+
         
         if (!response.ok) {
           if (response.status === 404) {

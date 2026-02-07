@@ -18,7 +18,8 @@ export default function Sidebar({ isOpen = false, onClose = () => {}, onNavigate
     {
       category: 'Analytics & Results',
       items: [
-        { icon: BarChart3, label: 'Test Results', path: '/test-results', color: 'text-cyan-400', auth: true }
+        { icon: BarChart3, label: 'Test Results', path: '/test-results', color: 'text-cyan-400', auth: true },
+        { icon: Shield, label: 'Plagiarism Checker', path: '/plagiarism', color: 'text-red-400', auth: true } // ✅ Added
       ]
     },
     {

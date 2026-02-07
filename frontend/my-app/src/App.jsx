@@ -19,7 +19,7 @@ import StudentTestEditor from './components/StudentTestEditor';
 import TestComplete from './components/TestComplete';
 import TeacherTestResultsPage from './components/TeacherTestResultsPage';
 import ThankYou from './components/ThankYou';
-
+import TeacherPlagiarismPage from "./components/TeacherPlagiarismPage";
 
 function AppContent() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -76,6 +76,7 @@ function AppContent() {
             <Route path="/studenttesteditor" element={<StudentTestEditor />} />
             <Route path="/test-complete" element={<TestComplete />} />
             <Route path="/thank-you" element={<ThankYou />} />
+            <Route path="/plagiarism" element={<TeacherPlagiarismPage />} />            
             {/* Protected Routes */}
             <Route 
               path="/editor" 

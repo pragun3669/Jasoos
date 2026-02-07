@@ -102,7 +102,7 @@ const HomePage = ({ onNavigate }) => {
     { name: "Backend", tech: "Spring Boot + RESTful APIs" },
     { name: "AI/Proctoring", tech: "OpenCV + PyTorch" },
     { name: "Code Execution", tech: "Dockerized Runner Environment" },
-    { name: "Database", tech: "MySQL + Hibernate ORM" },
+    { name: "Database", tech: "MySQL" },
     { name: "Security", tech: "JWT Authentication + HTTPS" }
   ];
   

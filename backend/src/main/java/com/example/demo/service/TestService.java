@@ -4,8 +4,19 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Optional;
+import java.net.NetworkInterface;
+import java.net.InetAddress;
+import java.net.Inet4Address;
+import java.util.Enumeration;
+
 
 import jakarta.transaction.Transactional;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.example.demo.dto.CreateTestDTO;
@@ -29,6 +40,8 @@ import com.example.demo.repository.teacher.StudentRepository;
 import com.example.demo.repository.teacher.SubmissionRepository;
 import com.example.demo.repository.teacher.SubmissionResultRepository;
 
+import com.example.demo.controller.PlagiarismController; // <-- expect this bean to exist
+
 @Service
 public class TestService {
 
@@ -38,6 +51,7 @@ public class TestService {
     private final SubmissionRepository submissionRepository;
     private final SubmissionResultRepository submissionResultRepository;
     private final ScoreCalculationService scoreCalculationService;
+    private final PlagiarismController plagiarismController;
 
     public TestService(
             TestRepository testRepository,
@@ -45,7 +59,8 @@ public class TestService {
             StudentRepository studentRepository,
             SubmissionRepository submissionRepository,
             SubmissionResultRepository submissionResultRepository,
-            ScoreCalculationService scoreCalculationService
+            ScoreCalculationService scoreCalculationService,
+            PlagiarismController plagiarismController
     ) {
         this.testRepository = testRepository;
         this.testLinkRepository = testLinkRepository;
@@ -53,7 +68,12 @@ public class TestService {
         this.submissionRepository = submissionRepository;
         this.submissionResultRepository = submissionResultRepository;
         this.scoreCalculationService = scoreCalculationService;
+        this.plagiarismController = plagiarismController;
     }
+
+    @Autowired
+    private AICodeGeneratorService aiCodeGeneratorService;
+    
 
     // --- CREATE TEST ---
     @Transactional
@@ -87,6 +107,15 @@ public class TestService {
 
         double finalTimeLimit = calculateTimeLimit(q.getMaxInputSize(), q.getComplexity(), q.getBaseTimeLimit());
         q.setTimeLimitSec(finalTimeLimit);
+
+        //  ✅ FIXED: AI Code Generation (correct variable: q instead of question)
+        try {
+            String aiCode = aiCodeGeneratorService.generateSolution(qdto.getDescription());
+            q.setAiGeneratedSolution(aiCode);
+        } catch (Exception e) {
+            System.out.println("AI generation failed for question: " + qdto.getDescription());
+            q.setAiGeneratedSolution("// AI generation failed");
+        }
 
         qdto.getTestCases().forEach(tcDto -> {
             TestCase testCase = mapToTestCaseEntity(tcDto, q);
@@ -153,7 +182,8 @@ public class TestService {
                             q.getId(),
                             q.getDescription(),
                             q.getMarks(),
-                            testCases
+                            testCases,
+                            q.getAiGeneratedSolution()
                     );
                 })
                 .collect(Collectors.toList());
@@ -181,36 +211,36 @@ public class TestService {
     }
     // Add these methods to your TestService.java
 
-public void startTest(Long testId) {
-    Test test = testRepository.findById(testId)
-        .orElseThrow(() -> new RuntimeException("Test not found"));
-    
-    test.setStatus("active");
-    testRepository.save(test);
-}
-
-public void stopTest(Long testId) {
-    Test test = testRepository.findById(testId)
-        .orElseThrow(() -> new RuntimeException("Test not found"));
-    
-    test.setStatus("completed");
-    testRepository.save(test);
-}
-    // --- GENERATE TEST LINK ---
-    @Transactional
-    public String generateTestLink(Long testId) {
+    public void startTest(Long testId) {
         Test test = testRepository.findById(testId)
-                .orElseThrow(() -> new RuntimeException("Test not found with ID: " + testId));
+            .orElseThrow(() -> new RuntimeException("Test not found"));
 
-        String token = UUID.randomUUID().toString();
-
-        TestLink link = new TestLink();
-        link.setTest(test);
-        link.setLinkToken(token);
-        testLinkRepository.save(link);
-
-        return "http://localhost:3000/test/" + token;
+        test.setStatus("active");
+        testRepository.save(test);
     }
+
+    public void stopTest(Long testId) {
+        Test test = testRepository.findById(testId)
+            .orElseThrow(() -> new RuntimeException("Test not found"));
+
+        test.setStatus("completed");
+        testRepository.save(test);
+    }
+    // --- GENERATE TEST LINK ---
+@Transactional
+public String generateTestLink(Long testId) {
+    Test test = testRepository.findById(testId)
+            .orElseThrow(() -> new RuntimeException("Test not found with ID: " + testId));
+
+    String token = UUID.randomUUID().toString();
+
+    TestLink link = new TestLink();
+    link.setTest(test);
+    link.setLinkToken(token);
+    testLinkRepository.save(link);
+
+    return "http://localhost:3000/test/" + token;
+}
 
     public TestDetailsDTO getTestByLinkToken(String token) {
         TestLink link = testLinkRepository.findByLinkToken(token.trim())
@@ -287,9 +317,18 @@ public void stopTest(Long testId) {
             dto.setEmail(student.getEmail());
             dto.setBatch(student.getBatch());
             dto.setStatus(student.getSubmittedAt() != null ? "Submitted" : "Not Attempted");
-            dto.setSubmissionTime(student.getSubmittedAt());
+            dto.setSubmittedAt(student.getSubmittedAt());
             dto.setTotalMarks(totalMarks);
             dto.setScore(student.getScore() != null ? student.getScore() : 0);
+
+            // Compute plagiarism details (score + metadata)
+            PlagiarismResult pr = computePlagiarismResult(student, test);
+            dto.setPlagiarismScore(pr.score);
+            dto.setSubmittedCode(pr.studentSubmittedCode);
+            dto.setAiGeneratedSolution(pr.aiMatchedCode);
+            dto.setSimilarStudentCode(pr.similarStudentCode);
+            dto.setSimilaritySource(pr.similaritySource);
+
             dto.setTabSwitchCount(student.getTabSwitchCount());
             dto.setCopyPasteAttempts(student.getCopyPasteAttempts());
 
@@ -301,18 +340,19 @@ public void stopTest(Long testId) {
             return dto;
         }).collect(Collectors.toList());
     }
+
     private List<StudentResultDTO.QuestionResultDTO> buildQuestionResults(List<Submission> submissions, Test test) {
         return test.getQuestions().stream().map(question -> {
             StudentResultDTO.QuestionResultDTO qDto = new StudentResultDTO.QuestionResultDTO();
             qDto.setQuestionId(question.getId());
             qDto.setQuestionDescription(question.getDescription());
             qDto.setQuestionMarks(question.getMarks());
-    
+
             // Filter submissions for this question
             List<Submission> questionSubs = submissions.stream()
                     .filter(sub -> question.getId().equals(sub.getQuestionId()))
                     .collect(Collectors.toList());
-    
+
             if (questionSubs.isEmpty()) {
                 qDto.setCorrect(false);
                 qDto.setAttempts(0);
@@ -322,35 +362,39 @@ public void stopTest(Long testId) {
                 qDto.setTestCaseResults(List.of());
                 qDto.setSubmittedCode(null);  // ✅ ADD THIS
                 qDto.setLanguage(null);       // ✅ ADD THIS
+                qDto.setAiGeneratedSolution(question.getAiGeneratedSolution()); // optional
+                qDto.setPlagiarismScore(0.0);
+                qDto.setSimilaritySource("unknown");
                 return qDto;
             }
-    
+
             // Latest submission
             Submission latestSub = questionSubs.get(questionSubs.size() - 1);
-            
+
             // ✅ ADD THESE TWO LINES:
             qDto.setSubmittedCode(latestSub.getSource());
             qDto.setLanguage(latestSub.getLanguage());
-            
+            qDto.setAiGeneratedSolution(question.getAiGeneratedSolution());
+
             List<SubmissionResult> results = submissionResultRepository.findBySubmissionId(latestSub.getId());
-    
+
             int totalTestCases = results.size();
             long passedCount = results.stream()
                     .filter(r -> "AC".equalsIgnoreCase(r.getStatus()))
                     .count();
-    
+
             qDto.setCorrect(passedCount == totalTestCases && totalTestCases > 0);
             qDto.setAttempts(questionSubs.size());
             qDto.setPassedTestCases((int) passedCount);
             qDto.setTotalTestCases(totalTestCases);
-    
+
             // Earned points
             double pointsPerQuestion = 100.0 / test.getQuestions().size();
             double earnedPoints = totalTestCases > 0
                     ? (passedCount * pointsPerQuestion) / totalTestCases
                     : 0.0;
             qDto.setEarnedPoints(Math.round(earnedPoints * 100.0) / 100.0);
-    
+
             // Add test case-level details
             List<StudentResultDTO.TestCaseResultDTO> testCaseResults = results.stream()
                     .map(r -> {
@@ -363,10 +407,195 @@ public void stopTest(Long testId) {
                         tcDto.setError(r.getStderr());
                         return tcDto;
                     }).collect(Collectors.toList());
-    
+
             qDto.setTestCaseResults(testCaseResults);
-    
+
+            // Per-question plagiarism (optional): compute highest of AI / others / self
+            try {
+                double perQScore = 0.0;
+                String perQSource = "unknown";
+
+                // Compare with AI
+                double aiScore = 0.0;
+                if (question.getAiGeneratedSolution() != null && !question.getAiGeneratedSolution().isBlank()) {
+                    Double tmp = plagiarismController.callPlagiarismService(latestSub.getSource(), question.getAiGeneratedSolution());
+                    aiScore = tmp != null ? tmp : 0.0;
+                }
+
+                // Compare with other students latest submissions for same question
+                List<Submission> others = submissionRepository.findByTestId(test.getId()).stream()
+                        .filter(s -> question.getId().equals(s.getQuestionId()))
+                        .filter(s -> !s.getStudentId().equals(latestSub.getStudentId()))
+                        .collect(Collectors.toList());
+
+                double bestOther = 0.0;
+                for (Submission o : others) {
+                    if (o.getSource() == null || o.getSource().isBlank()) continue;
+                    Double tmp = plagiarismController.callPlagiarismService(latestSub.getSource(), o.getSource());
+                    double val = tmp != null ? tmp : 0.0;
+                    if (val > bestOther) {
+                        bestOther = val;
+                    }
+                }
+
+                // Self check (previous attempt)
+                double selfScore = 0.0;
+                List<Submission> allForQ = submissionRepository.findByTestId(test.getId()).stream()
+                        .filter(s -> question.getId().equals(s.getQuestionId()))
+                        .filter(s -> s.getStudentId().equals(latestSub.getStudentId()))
+                        .sorted(Comparator.comparing(Submission::getCreatedAt))
+                        .collect(Collectors.toList());
+                if (allForQ.size() > 1) {
+                    Submission prev = allForQ.get(allForQ.size() - 2);
+                    Double tmp = plagiarismController.callPlagiarismService(latestSub.getSource(), prev.getSource());
+                    selfScore = tmp != null ? tmp : 0.0;
+                }
+
+                // Weighted combine (same weights as top-level)
+                double combined = (aiScore * 0.40) + (bestOther * 0.50) + (selfScore * 0.10);
+                perQScore = combined;
+                if (aiScore >= bestOther && aiScore >= selfScore && aiScore > 0) perQSource = "ai";
+                else if (bestOther >= aiScore && bestOther >= selfScore && bestOther > 0) perQSource = "other_student";
+                else if (selfScore > 0) perQSource = "self";
+                else perQSource = "unknown";
+
+                qDto.setPlagiarismScore(Math.round(perQScore * 100.0) / 100.0);
+                qDto.setSimilaritySource(perQSource);
+            } catch (Exception e) {
+                qDto.setPlagiarismScore(0.0);
+                qDto.setSimilaritySource("unknown");
+            }
+
             return qDto;
         }).collect(Collectors.toList());
     }
+
+    /**
+     * Internal helper that returns a numeric score + metadata to be sent to DTO.
+     */
+    private static class PlagiarismResult {
+        double score;
+        String studentSubmittedCode;
+        String aiMatchedCode;
+        String similarStudentCode;
+        String similaritySource;
+
+        PlagiarismResult() {
+            this.score = 0.0;
+            this.studentSubmittedCode = null;
+            this.aiMatchedCode = null;
+            this.similarStudentCode = null;
+            this.similaritySource = "unknown";
+        }
+    }
+
+    /**
+     * Compute plagiarism score and metadata (student submitted code, best-matching student code,
+     * ai match, and similarity source). Defensive against nulls and service failures.
+     */
+   /**
+ * NEW simplified plagiarism logic:
+ * - Compare against AI solution
+ * - Compare against other students
+ * - Do NOT compare against own previous attempts
+ * - Final Score < 60 → treated as "pass"
+ */
+private PlagiarismResult computePlagiarismResult(Student student, Test test) {
+
+    PlagiarismResult out = new PlagiarismResult();
+
+    try {
+        // ------------------------------------------
+        // 1) Get student code
+        // ------------------------------------------
+        List<Submission> mySubs =
+                submissionRepository.findByStudentIdAndTestId(student.getId(), test.getId());
+
+        if (mySubs == null || mySubs.isEmpty()) {
+            out.score = 0.0;
+            out.similaritySource = "pass";
+            return out;
+        }
+
+        String myCode = mySubs.get(0).getSource();
+        if (myCode == null || myCode.isBlank()) {
+            out.score = 0.0;
+            out.similaritySource = "pass";
+            return out;
+        }
+
+        out.studentSubmittedCode = myCode;
+
+        // ------------------------------------------
+        // 2) Variables for best matches
+        // ------------------------------------------
+        double aiScore = 0.0;
+        double studentScore = 0.0;
+
+        // ===========================================================
+        // 3️⃣ AI SIMILARITY CHECK  (student ↔ aiGeneratedSolution)
+        // ===========================================================
+        for (Question q : test.getQuestions()) {
+
+            String aiCode = q.getAiGeneratedSolution();
+            if (aiCode == null || aiCode.isBlank()) continue;
+
+            Double score = plagiarismController.callPlagiarismService(myCode, aiCode);
+            double val = (score != null) ? score : 0.0;
+
+            if (val > aiScore) {
+                aiScore = val;
+                out.aiMatchedCode = aiCode;  // save the strongest AI match
+            }
+        }
+
+        // ===========================================================
+        // 4️⃣ STUDENT SIMILARITY CHECK  (student ↔ other student)
+        // ===========================================================
+        List<Student> allStudents = studentRepository.findByTestId(test.getId());
+
+        for (Student other : allStudents) {
+            if (other.getId().equals(student.getId())) continue;
+
+            List<Submission> otherSubs =
+                    submissionRepository.findByStudentIdAndTestId(other.getId(), test.getId());
+            if (otherSubs == null || otherSubs.isEmpty()) continue;
+
+            String otherCode = otherSubs.get(0).getSource();
+            if (otherCode == null || otherCode.isBlank()) continue;
+
+            Double score = plagiarismController.callPlagiarismService(myCode, otherCode);
+            double val = (score != null) ? score : 0.0;
+
+            if (val > studentScore) {
+                studentScore = val;
+                out.similarStudentCode = otherCode;  // save best matching student code
+            }
+        }
+
+        // ===========================================================
+        // 5️⃣ FINAL PLAGIARISM DECISION (no combine logic!)
+        // ===========================================================
+        double finalScore = Math.max(aiScore, studentScore);
+        out.score = Math.round(finalScore * 100.0) / 100.0;
+
+        if (studentScore >= 70) {
+            out.similaritySource = "other_student";
+        }
+        else if (aiScore >= 70) {
+            out.similaritySource = "ai";
+        }
+        else {
+            out.similaritySource = "pass";  // no plagiarism detected
+        }
+
+        return out;
+
+    } catch (Exception e) {
+        out.score = 0.0;
+        out.similaritySource = "pass";
+        return out;
+    }
+}
+
 }

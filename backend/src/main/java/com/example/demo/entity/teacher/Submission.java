@@ -4,9 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
 import java.time.LocalDateTime;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 @Entity
 @Table(name = "submission")
 @Getter
@@ -18,27 +17,30 @@ public class Submission {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // --- Keep primitive fields for backward compatibility ---
-    @Column(name = "student_id", nullable = false, insertable = false, updatable = false)
+    // primitive fields for backward compatibility
+    @Column(name = "student_id", nullable = false)
     private Long studentId;
 
-    @Column(name = "test_id", nullable = false, insertable = false, updatable = false)
+    @Column(name = "test_id", nullable = false)
     private Long testId;
 
-    @Column(name = "question_id", nullable = false, insertable = false, updatable = false)
+    @Column(name = "question_id", nullable = false)
     private Long questionId;
 
-    // --- Optional: map relationships if you have entities for Student, Test, Question ---
+    // JPA relationships
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "student_id")
+    @JoinColumn(name = "student_id", insertable = false, updatable = false)
+    @JsonIgnore
     private Student student;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "test_id")
+    @JoinColumn(name = "test_id", insertable = false, updatable = false)
+    @JsonIgnore
     private Test test;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "question_id")
+    @JoinColumn(name = "question_id", insertable = false, updatable = false)
+    @JsonIgnore
     private Question question;
 
     private String language;
@@ -52,13 +54,16 @@ public class Submission {
     @Column(columnDefinition = "TEXT")
     private String stdin;
 
-    private String status; // PENDING, RUNNING, COMPLETED, FAILED
+    private String status;
 
     @Lob
     @Column(name = "compile_output", columnDefinition = "TEXT")
     private String compileOutput;
 
     private Integer score;
+    // add below: private Integer score;
+private Double plagiarismScore;   // 0–100 score for code plagiarism
+
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

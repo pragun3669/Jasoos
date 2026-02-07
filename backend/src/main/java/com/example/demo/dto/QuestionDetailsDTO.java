@@ -11,12 +11,14 @@ public class QuestionDetailsDTO {
     private String description;
     private Integer marks;
     private List<TestCaseDetailsDTO> testCases;
+    private String aiGeneratedSolution;
 
-    public QuestionDetailsDTO(Long id, String description, Integer marks, List<TestCaseDetailsDTO> testCases) {
+    public QuestionDetailsDTO(Long id, String description, Integer marks, List<TestCaseDetailsDTO> testCases,String aiGeneratedSolution) {
         this.id = id;
         this.description = description;
         this.marks = marks;
         this.testCases = testCases;
+        this.aiGeneratedSolution = aiGeneratedSolution;
     }
 
 }

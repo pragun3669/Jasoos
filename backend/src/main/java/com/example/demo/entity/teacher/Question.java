@@ -44,6 +44,10 @@ public class Question {
     @JsonManagedReference
     private List<TestCase> testCases = new ArrayList<>();
 
+    
+    @Column(columnDefinition = "TEXT")
+    private String aiGeneratedSolution;   // <-- NEW FIELD
+    
     public Question(String description, Integer marks, Test test) {
         this.description = description;
         this.marks = marks;

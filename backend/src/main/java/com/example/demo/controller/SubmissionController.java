@@ -34,15 +34,19 @@ public class SubmissionController {
         );
     }
 
-    // ---- Frontend polls submission status ----
     @GetMapping("/{id}")
-    public ResponseEntity<Submission> getSubmission(@PathVariable Long id) {
+    public ResponseEntity<SubmissionResponseDTO> getSubmission(@PathVariable Long id) {
+    
         Submission s = submissionService.getSubmission(id);
-        if (s == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(s);
+    
+        SubmissionResponseDTO dto = new SubmissionResponseDTO(
+                s.getId(),
+                s.getStatus()
+        );
+    
+        return ResponseEntity.ok(dto);
     }
+    
 
     // ---- Frontend polls submission test results ----
     @GetMapping("/{id}/results")
@@ -50,4 +54,14 @@ public class SubmissionController {
         List<SubmissionResult> results = submissionService.getResultsForSubmission(id);
         return ResponseEntity.ok(results);
     }
+        // ---- Teacher: get all submissions for a student in a test ----
+        @GetMapping("/test/{testId}/student/{studentId}")
+        public ResponseEntity<List<Submission>> getSubmissionsForStudentInTest(
+                @PathVariable Long testId,
+                @PathVariable Long studentId) {
+    
+            List<Submission> submissions = submissionService.getSubmissionsForStudent(testId, studentId);
+            return ResponseEntity.ok(submissions);
+        }
+    
 }

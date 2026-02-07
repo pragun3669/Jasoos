@@ -5,11 +5,9 @@ import com.example.demo.dto.SubmissionRequest;
 import com.example.demo.entity.teacher.Question;
 import com.example.demo.entity.teacher.Submission;
 import com.example.demo.entity.teacher.SubmissionResult;
+import com.example.demo.entity.teacher.Test;
 import com.example.demo.entity.teacher.TestCase;
-import com.example.demo.repository.teacher.QuestionRepository;
-import com.example.demo.repository.teacher.SubmissionRepository;
-import com.example.demo.repository.teacher.SubmissionResultRepository;
-import com.example.demo.repository.teacher.TestCaseRepository;
+import com.example.demo.repository.teacher.*;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,55 +15,69 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
 public class SubmissionService {
+
     private final SubmissionRepository submissionRepository;
     private final SubmissionResultRepository submissionResultRepository;
     private final TestCaseRepository testCaseRepository;
-    private final QuestionRepository questionRepository; // ✅ Inject QuestionRepository
+    private final QuestionRepository questionRepository;
+    private final TestRepository testRepository;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @Value("${runner.url}") // ✅ Externalize runner URL
+    @Value("${runner.url}")
     private String runnerUrl;
 
-    // ✅ Use constructor injection for all dependencies
-    public SubmissionService(SubmissionRepository submissionRepository,
-                             SubmissionResultRepository submissionResultRepository,
-                             TestCaseRepository testCaseRepository,
-                             QuestionRepository questionRepository) {
+    public SubmissionService(
+            SubmissionRepository submissionRepository,
+            SubmissionResultRepository submissionResultRepository,
+            TestCaseRepository testCaseRepository,
+            QuestionRepository questionRepository,
+            TestRepository testRepository
+    ) {
         this.submissionRepository = submissionRepository;
         this.submissionResultRepository = submissionResultRepository;
         this.testCaseRepository = testCaseRepository;
         this.questionRepository = questionRepository;
+        this.testRepository = testRepository;
     }
 
+    // =========================
+    // CREATE SUBMISSION (FIXED!)
+    // =========================
     public Submission createSubmission(Long testId, SubmissionRequest request, Long studentId) {
+
+        Test test = testRepository.findById(testId)
+                .orElseThrow(() -> new RuntimeException("Test not found: " + testId));
+
         Submission submission = new Submission();
-        submission.setTestId(testId);
+
+        // CRITICAL FIX
+        submission.setTest(test);      // sets JPA relation → Fills test_id in DB
+        submission.setTestId(testId);  // optional but OK
+
         submission.setStudentId(studentId);
+        submission.setQuestionId(request.getQuestionId());
         submission.setFilename(request.getFilename());
         submission.setLanguage(request.getLanguage());
         submission.setSource(request.getSource());
         submission.setStdin(request.getStdin());
         submission.setStatus("PENDING");
-        submission.setQuestionId(request.getQuestionId());
 
         Submission saved = submissionRepository.save(submission);
 
-        // Send to runner
         sendToRunner(saved);
 
         return saved;
     }
 
-    // ---- Get Submission ----
+    // =========================
+    // GET SUBMISSION
+    // =========================
     public Submission getSubmission(Long id) {
         return submissionRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Submission not found with id: " + id));
@@ -74,11 +86,15 @@ public class SubmissionService {
     public List<SubmissionResult> getResultsForSubmission(Long submissionId) {
         return submissionResultRepository.findBySubmissionId(submissionId);
     }
-
-    // ---- Send job to runner ----
+    public List<Submission> getSubmissionsForStudent(Long studentId, Long testId) {
+        return submissionRepository.findByStudentIdAndTestId(studentId, testId);
+    }
+    
+    // =========================
+    // SEND CODE TO RUNNER
+    // =========================
     private void sendToRunner(Submission s) {
         try {
-            // ✅ Fetch the question to get its properties
             Question question = questionRepository.findById(s.getQuestionId())
                     .orElseThrow(() -> new EntityNotFoundException("Question not found with id: " + s.getQuestionId()));
 
@@ -86,54 +102,57 @@ public class SubmissionService {
             job.put("submissionId", s.getId());
             job.put("language", s.getLanguage());
             job.put("source", s.getSource());
-
-            // ✅ Add the pre-calculated time limit to the job payload
             job.put("timeLimitSec", question.getTimeLimitSec());
 
-            // Fetch test cases
             List<TestCase> testCases = testCaseRepository.findByQuestionId(s.getQuestionId());
             List<Map<String, Object>> caseList = new ArrayList<>();
+
             for (TestCase tc : testCases) {
                 Map<String, Object> map = new HashMap<>();
                 map.put("testCaseId", tc.getId());
                 map.put("inputData", tc.getInputData());
-                // No need to send expectedOutput to the runner; it's for backend validation only
                 caseList.add(map);
             }
+
             job.put("testCases", caseList);
 
             ResponseEntity<String> response = restTemplate.postForEntity(runnerUrl, job, String.class);
             System.out.println("Runner response: " + response.getBody());
 
         } catch (Exception e) {
-            System.err.println("Error sending job to runner: " + e.getMessage());
+            System.err.println("Runner error: " + e.getMessage());
             s.setStatus("FAILED");
             s.setCompileOutput("Runner error: " + e.getMessage());
             submissionRepository.save(s);
         }
     }
 
-    // ---- Handle callback from runner ----
+    // =========================
+    // RUNNER CALLBACK HANDLER
+    // =========================
     @Transactional
     public void handleRunnerCallback(RunnerResultDTO dto) {
+
         Submission submission = submissionRepository.findById(dto.getSubmissionId())
                 .orElseThrow(() -> new EntityNotFoundException("Submission not found with id: " + dto.getSubmissionId()));
 
         submission.setStatus(dto.getStatus());
         submission.setCompileOutput(dto.getCompileOutput());
 
-        // Fetch all test cases at once
         List<Long> testCaseIds = dto.getResults().stream()
                 .map(RunnerResultDTO.TestResultDTO::getTestCaseId)
                 .collect(Collectors.toList());
 
-        Map<Long, TestCase> testCaseMap = testCaseRepository.findAllById(testCaseIds).stream()
-                .collect(Collectors.toMap(TestCase::getId, Function.identity()));
+        Map<Long, TestCase> testCaseMap =
+                testCaseRepository.findAllById(testCaseIds).stream()
+                        .collect(Collectors.toMap(TestCase::getId, Function.identity()));
 
-        List<SubmissionResult> resultsToSave = new ArrayList<>();
+        List<SubmissionResult> toSave = new ArrayList<>();
+
         for (RunnerResultDTO.TestResultDTO tr : dto.getResults()) {
-            TestCase currentTestCase = testCaseMap.get(tr.getTestCaseId());
-            if (currentTestCase == null) continue;
+
+            TestCase tc = testCaseMap.get(tr.getTestCaseId());
+            if (tc == null) continue;
 
             SubmissionResult sr = new SubmissionResult();
             sr.setSubmissionId(submission.getId());
@@ -142,34 +161,27 @@ public class SubmissionService {
             sr.setStderr(tr.getStderr());
             sr.setExecTimeMs(tr.getExecTimeMs());
             sr.setMemoryKb(tr.getMemoryKb());
-            sr.setInputData(currentTestCase.getInputData());  // ✅ ADD THIS LINE
-            sr.setExpectedOutput(currentTestCase.getExpectedOutput());
+            sr.setInputData(tc.getInputData());
+            sr.setExpectedOutput(tc.getExpectedOutput());
 
-            // ✅ Backend decides result
-            if ("TLE".equals(tr.getStatus())) {
-                sr.setStatus("TLE");
-            } else if ("COMPILE_ERROR".equals(dto.getStatus())) {
-                sr.setStatus("CE");
-            } else if ("FAILED".equals(dto.getStatus())) {
-                sr.setStatus("RTE");
-            } else {
-                // Compare output with DB
-                String expected = currentTestCase.getExpectedOutput().trim();
+            if ("TLE".equals(tr.getStatus())) sr.setStatus("TLE");
+            else if ("CE".equals(dto.getStatus())) sr.setStatus("CE");
+            else {
+                String expected = tc.getExpectedOutput().trim();
                 String actual = (tr.getStdout() != null ? tr.getStdout().trim() : "");
                 sr.setStatus(expected.equals(actual) ? "AC" : "WA");
             }
 
-            resultsToSave.add(sr);
+            toSave.add(sr);
         }
-        submissionResultRepository.saveAll(resultsToSave);
 
-        // ---- Calculate Score ----
-        long passedCount = resultsToSave.stream().filter(r -> "AC".equals(r.getStatus())).count();
-        long totalCount = testCaseRepository.countByQuestionId(submission.getQuestionId());
-        int score = (totalCount > 0) ? (int) ((double) passedCount / totalCount * 100) : 0;
+        submissionResultRepository.saveAll(toSave);
+
+        long passed = toSave.stream().filter(r -> "AC".equals(r.getStatus())).count();
+        long total = testCaseRepository.countByQuestionId(submission.getQuestionId());
+        int score = (total > 0) ? (int) ((double) passed / total * 100) : 0;
         submission.setScore(score);
 
         submissionRepository.save(submission);
     }
-
 }

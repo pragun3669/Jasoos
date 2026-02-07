@@ -221,6 +221,28 @@ const TestPreviewModal = ({ test, onClose, onOpenEditor, onOpenCodeForm }) => {
                       </div>
                     </div>
                   )}
+
+                  {/* ------------------------------------------------------------ */}
+                  {/* ⭐ ADDED SECTION: AI GENERATED SOLUTION (NO CSS MODIFIED) ⭐ */}
+                  {/* ------------------------------------------------------------ */}
+                  {question.aiGeneratedSolution && (
+                    <div className="mt-6">
+                      <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center">
+                        <Code className="w-4 h-4 mr-2 text-blue-500" />
+                        AI Generated Solution:
+                      </h4>
+
+                      <div className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto border border-gray-700">
+                        <pre className="text-sm whitespace-pre-wrap">
+                          {question.aiGeneratedSolution}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                  {/* ------------------------------------------------------------ */}
+                  {/* ⭐ END AI GENERATED SOLUTION SECTION ⭐ */}
+                  {/* ------------------------------------------------------------ */}
+
                 </div>
               ))}
             </div>

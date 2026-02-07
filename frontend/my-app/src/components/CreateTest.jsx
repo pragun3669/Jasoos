@@ -30,6 +30,8 @@ const CreateTest = () => {
           maxInputSize: 200000,
           complexity: 'O(N)',
           baseTimeLimit: 1.0,
+          aiCode: "",          // <-- ADDED
+          aiLoading: false,     // <-- ADDED
           testCases: [
             { id: 1, inputData: '', expectedOutput: '', exampleCase: true }
           ]
@@ -111,6 +113,54 @@ const CreateTest = () => {
     }));
   };
 
+  // 🔥 NEW FUNCTION — Generate AI Code for one question
+  const generateAIForQuestion = async (qIdx) => {
+    const description = formData.questions[qIdx].description;
+
+    if (!description.trim()) {
+      alert("Please enter the question description first.");
+      return;
+    }
+
+    // Set loading state
+    setFormData(prev => ({
+      ...prev,
+      questions: prev.questions.map((q, i) =>
+        i === qIdx ? { ...q, aiLoading: true } : q
+      )
+    }));
+
+    try {
+      const response = await axios.get(
+        "http://localhost:8081/api/tests/generate-ai",
+        {
+          params: { description },
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const aiCode = response.data;
+
+      setFormData(prev => ({
+        ...prev,
+        questions: prev.questions.map((q, i) =>
+          i === qIdx ? { ...q, aiCode, aiLoading: false } : q
+        )
+      }));
+
+    } catch (err) {
+      alert("AI code generation failed.");
+
+      setFormData(prev => ({
+        ...prev,
+        questions: prev.questions.map((q, i) =>
+          i === qIdx ? { ...q, aiLoading: false } : q
+        )
+      }));
+    }
+  };
   // Validate form
   const validateForm = () => {
     const newErrors = {};
@@ -254,7 +304,6 @@ const CreateTest = () => {
                   </div>
                 )}
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Duration */}
                 <div className="group">
@@ -294,7 +343,7 @@ const CreateTest = () => {
                       errors.numberOfQuestions 
                         ? 'border-red-500 focus:border-red-600' 
                         : 'border-gray-300 dark:border-gray-600 focus:border-emerald-500 dark:focus:border-emerald-500'
-                    } bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all duration-200`}
+                    } bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all duration-200`}
                     value={formData.numberOfQuestions}
                     onChange={e => handleNumberOfQuestionsChange(e.target.value)}
                     placeholder="5"
@@ -311,7 +360,7 @@ const CreateTest = () => {
             </div>
           </div>
 
-          {/* Questions */}
+          {/* QUESTIONS LOOP */}
           {formData.questions.map((q, qIdx) => (
             <div 
               key={qIdx} 
@@ -340,7 +389,7 @@ const CreateTest = () => {
                     } bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all duration-200 min-h-[120px] resize-y`}
                     value={q.description}
                     onChange={e => handleQuestionChange(qIdx, 'description', e.target.value)}
-                    placeholder="Describe the problem statement, constraints, and expected output format..."
+                    placeholder="Describe the problem statement, constraints, expected format..."
                   />
                   {errors[`question_${qIdx}_description`] && (
                     <div className="mt-2 flex items-center gap-2 text-red-500 text-sm animate-fade-in">
@@ -375,12 +424,13 @@ const CreateTest = () => {
                   )}
                 </div>
 
-                {/* Advanced Configuration */}
+                {/* ADVANCED CONFIGURATION */}
                 <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-700">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
                     <Code className="w-4 h-4 text-emerald-500" />
                     Advanced Configuration
                   </h3>
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -391,9 +441,9 @@ const CreateTest = () => {
                         className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-200 text-sm"
                         value={q.maxInputSize}
                         onChange={e => handleQuestionChange(qIdx, 'maxInputSize', e.target.value)}
-                        placeholder="200000"
                       />
                     </div>
+
                     <div>
                       <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
                         Complexity
@@ -403,9 +453,9 @@ const CreateTest = () => {
                         className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-200 text-sm"
                         value={q.complexity}
                         onChange={e => handleQuestionChange(qIdx, 'complexity', e.target.value)}
-                        placeholder="O(N)"
                       />
                     </div>
+
                     <div>
                       <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
                         Base Time Limit (s)
@@ -416,18 +466,18 @@ const CreateTest = () => {
                         className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-200 text-sm"
                         value={q.baseTimeLimit}
                         onChange={e => handleQuestionChange(qIdx, 'baseTimeLimit', e.target.value)}
-                        placeholder="1.0"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Test Cases */}
+                {/* TEST CASES */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                     <CheckCircle className="w-5 h-5 text-emerald-500" />
                     Test Cases
                   </h3>
+
                   <div className="space-y-4">
                     {q.testCases.map((tc, tcIdx) => (
                       <div 
@@ -445,6 +495,7 @@ const CreateTest = () => {
                               </div>
                             )}
                           </div>
+
                           {q.testCases.length > 1 && (
                             <button
                               type="button"
@@ -469,7 +520,6 @@ const CreateTest = () => {
                               } bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-200 min-h-[80px]`}
                               value={tc.inputData}
                               onChange={e => handleTestCaseChange(qIdx, tcIdx, 'inputData', e.target.value)}
-                              placeholder="5&#10;1 2 3 4 5"
                             />
                             {errors[`question_${qIdx}_tc_${tcIdx}_input`] && (
                               <div className="mt-2 flex items-center gap-2 text-red-500 text-sm">
@@ -491,7 +541,6 @@ const CreateTest = () => {
                               } bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all duration-200 min-h-[80px]`}
                               value={tc.expectedOutput}
                               onChange={e => handleTestCaseChange(qIdx, tcIdx, 'expectedOutput', e.target.value)}
-                              placeholder="15"
                             />
                             {errors[`question_${qIdx}_tc_${tcIdx}_output`] && (
                               <div className="mt-2 flex items-center gap-2 text-red-500 text-sm">
@@ -524,6 +573,7 @@ const CreateTest = () => {
                     </div>
                   )}
 
+                  {/* ADD TEST CASE BUTTON */}
                   <button
                     type="button"
                     onClick={() => addTestCase(qIdx)}
@@ -532,35 +582,69 @@ const CreateTest = () => {
                     <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
                     Add Test Case
                   </button>
+                </div> {/* END TEST CASES */}
+
+                {/* ⭐⭐⭐ AI CODE SECTION ADDED HERE (Option 1 — After Test Cases) ⭐⭐⭐ */}
+                <div className="mt-8">
+                  <button
+                    type="button"
+                    onClick={() => generateAIForQuestion(qIdx)}
+                    disabled={q.aiLoading}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-4 rounded-xl shadow-lg transition-all duration-300"
+                  >
+                    {q.aiLoading ? "Generating AI Code..." : "Generate AI Code"}
+                  </button>
+
+                  {q.aiCode && (
+                    <div className="mt-4 bg-gray-900 text-white p-4 rounded-xl border border-emerald-400 shadow-xl">
+                      <h3 className="font-bold mb-2 flex items-center gap-2">
+                        <FileCode className="w-5 h-5" />
+                        AI Generated Code
+                      </h3>
+
+                      <pre className="whitespace-pre-wrap text-sm">
+                        {q.aiCode}
+                      </pre>
+
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(q.aiCode)}
+                        className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg"
+                      >
+                        Copy Code
+                      </button>
+                    </div>
+                  )}
                 </div>
+
               </div>
             </div>
           ))}
 
-                    {/* Submit Button */}
-{formData.questions.length > 0 && (
-  <div className="pb-8">
-    <button
-      type="submit"
-      disabled={isLoading}
-      className="w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-600 hover:via-teal-600 hover:to-cyan-600 text-white font-bold px-8 py-5 rounded-xl shadow-2xl hover:shadow-emerald-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg group relative overflow-hidden"
-    >
-      <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-      {isLoading ? (
-        <>
-          <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-          Creating Test...
-        </>
-      ) : (
-        <>
-          <Save className="w-6 h-6 group-hover:scale-110 transition-transform" />
-          Create Test
-          <CheckCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
-        </>
-      )}
-    </button>
-  </div>
-)}
+          {/* SUBMIT BUTTON */}
+          {formData.questions.length > 0 && (
+            <div className="pb-8">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-600 hover:via-teal-600 hover:to-cyan-600 text-white font-bold px-8 py-5 rounded-xl shadow-2xl hover:shadow-emerald-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg group relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                {isLoading ? (
+                  <>
+                    <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Creating Test...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                    Create Test
+                    <CheckCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </form>
       </div>
 

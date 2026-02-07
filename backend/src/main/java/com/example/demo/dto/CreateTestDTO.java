@@ -35,6 +35,9 @@ public class CreateTestDTO {
         public Double baseTimeLimit;
 
         public List<TestCaseDTO> testCases = new ArrayList<>();
+        
+        public String aiSolution;
+        
     }
 
     /**

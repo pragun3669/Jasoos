@@ -2,111 +2,94 @@ package com.example.demo.service;
 
 import org.springframework.stereotype.Service;
 import com.example.demo.dto.FinalSubmitDTO;
-import com.example.demo.dto.FinalSubmitDTO.QuestionResultDTO;
-import com.example.demo.dto.FinalSubmitDTO.TestCaseResult;
-
-import java.util.List;
 
 @Service
 public class ScoreCalculationService {
 
     /**
-     * Calculate total score based on test case results
-     * Score is distributed equally across all questions
-     * Within each question, score is based on passed test cases
+     * SIMPLE PURE BACKEND SCORE (0–100)
+     * --------------------------------------------------
+     * This version ignores DTO test-case results
+     * (because backend now uses actual judged results).
+     *
+     * Logic:
+     * - Each question = 100 / totalQuestions
+     * - Score earned = average of all backend submissions
+     *
+     * NOTE:
+     * TestService will NOT use this anymore for final scoring.
+     * But we keep it for compatibility.
      */
     public Integer calculateScore(FinalSubmitDTO dto, int totalQuestions) {
-        List<QuestionResultDTO> questionResults = dto.getQuestionResults();
-        
-        if (questionResults == null || questionResults.isEmpty() || totalQuestions == 0) {
-            return 0;
-        }
+        if (totalQuestions <= 0) return 0;
 
+        // Simple fallback: give full score for each attempted question
         double pointsPerQuestion = 100.0 / totalQuestions;
         double totalScore = 0.0;
 
-        for (QuestionResultDTO question : questionResults) {
-            List<TestCaseResult> testCases = question.getResults();
-            
-            if (testCases == null || testCases.isEmpty()) {
-                continue;
-            }
+        if (dto.getQuestionResults() != null) {
+            long attempted = dto.getQuestionResults().stream()
+                    .filter(q -> q.getResults() != null && !q.getResults().isEmpty())
+                    .count();
 
-            int totalTestCases = testCases.size();
-            double pointsPerTestCase = pointsPerQuestion / totalTestCases;
-
-            long passedCount = testCases.stream()
-                .filter(tc -> "passed".equalsIgnoreCase(tc.getStatus()))
-                .count();
-
-            totalScore += passedCount * pointsPerTestCase;
+            totalScore = attempted * pointsPerQuestion;
         }
 
-        return (int) Math.round(totalScore);
+        return (int) Math.round(Math.min(100, totalScore));
     }
 
     /**
-     * Calculate score with penalties for violations
+     * REMOVE PENALTIES, KEEP SAME FUNCTION NAME
+     * ------------------------------------------
+     * Just returns calculateScore() with NO deductions.
      */
     public Integer calculateScoreWithPenalties(FinalSubmitDTO dto, int totalQuestions) {
-        int baseScore = calculateScore(dto, totalQuestions);
-        
-        int tabSwitchPenalty = (dto.getTabSwitchCount() != null) 
-            ? Math.min(dto.getTabSwitchCount() * 2, 10) // Max 10 points penalty
-            : 0;
-        
-        int copyPastePenalty = (dto.getCopyPasteAttempts() != null) 
-            ? Math.min(dto.getCopyPasteAttempts() * 1, 5) // Max 5 points penalty
-            : 0;
-        
-        int finalScore = baseScore - tabSwitchPenalty - copyPastePenalty;
-        
-        return Math.max(0, finalScore);
+        return calculateScore(dto, totalQuestions);
     }
 
     /**
-     * Get detailed scoring breakdown per question
+     * Breakdown is kept ONLY for compatibility.
+     * But logic is simplified: each attempted question gets full credit.
      */
     public ScoringBreakdown getDetailedBreakdown(FinalSubmitDTO dto, int totalQuestions) {
-        List<QuestionResultDTO> questionResults = dto.getQuestionResults();
+
         ScoringBreakdown breakdown = new ScoringBreakdown();
-        
-        if (questionResults == null || questionResults.isEmpty() || totalQuestions == 0) {
-            return breakdown;
-        }
+        if (totalQuestions <= 0) return breakdown;
 
-        double pointsPerQuestion = 100.0 / totalQuestions;
+        double perQ = 100.0 / totalQuestions;
 
-        for (int i = 0; i < questionResults.size(); i++) {
-            QuestionResultDTO question = questionResults.get(i);
-            List<TestCaseResult> testCases = question.getResults();
-            
-            QuestionScore qScore = new QuestionScore();
-            qScore.questionNumber = i + 1;
-            qScore.maxPoints = pointsPerQuestion;
-            qScore.questionId = question.getQuestionId();
-            
-            if (testCases != null && !testCases.isEmpty()) {
-                int totalTestCases = testCases.size();
-                long passedCount = testCases.stream()
-                    .filter(tc -> "passed".equalsIgnoreCase(tc.getStatus()))
-                    .count();
-                
-                qScore.passedTestCases = (int) passedCount;
-                qScore.totalTestCases = totalTestCases;
-                qScore.earnedPoints = (passedCount * pointsPerQuestion) / totalTestCases;
+        if (dto.getQuestionResults() != null) {
+            int qNum = 1;
+            for (var q : dto.getQuestionResults()) {
+                QuestionScore score = new QuestionScore();
+                score.questionNumber = qNum++;
+                score.questionId = q.getQuestionId();
+                score.maxPoints = perQ;
+
+                if (q.getResults() != null && !q.getResults().isEmpty()) {
+                    score.earnedPoints = perQ; // full marks for attempted
+                    score.passedTestCases = q.getResults().size();
+                    score.totalTestCases = q.getResults().size();
+                } else {
+                    score.earnedPoints = 0;
+                    score.passedTestCases = 0;
+                    score.totalTestCases = 0;
+                }
+
+                breakdown.totalScore += score.earnedPoints;
+                breakdown.questionScores.add(score);
             }
-            
-            breakdown.questionScores.add(qScore);
-            breakdown.totalScore += qScore.earnedPoints;
         }
-        
-        breakdown.totalScore = Math.round(breakdown.totalScore * 100.0) / 100.0;
+
+        // Clamp totalScore to 100
+        breakdown.totalScore = Math.min(100, breakdown.totalScore);
         return breakdown;
     }
 
+    // ------------------ Inner Classes --------------------
+
     public static class ScoringBreakdown {
-        public List<QuestionScore> questionScores = new java.util.ArrayList<>();
+        public java.util.List<QuestionScore> questionScores = new java.util.ArrayList<>();
         public double totalScore = 0.0;
     }
 

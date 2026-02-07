@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name = "student")
@@ -17,9 +18,9 @@ public class Student {
     private String email;
     private String phone;
     private String batch;
-    
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime submittedAt;
+    
 
     // ADD THESE THREE FIELDS:
     private Integer score;
@@ -31,6 +32,7 @@ public class Student {
     private Test test;
 
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
     private List<Submission> submissions;
 
     // Existing getters & setters...

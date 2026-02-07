@@ -14,23 +14,41 @@ import com.example.demo.dto.StudentDTO;
 import com.example.demo.dto.StudentResultDTO;
 import com.example.demo.entity.teacher.Student;
 import com.example.demo.service.TestService;
+import com.example.demo.service.AICodeGeneratorService;
+
 
 @RestController
 @RequestMapping("/api/tests")
 public class TestController {
 
     private final TestService testService;
+    private final AICodeGeneratorService aiCodeGeneratorService;
 
-    public TestController(TestService testService) {
+    public TestController(TestService testService, AICodeGeneratorService aiCodeGeneratorService) {
         this.testService = testService;
+        this.aiCodeGeneratorService = aiCodeGeneratorService;
     }
 
+    // --- CREATE TEST ---
     @PostMapping
     public ResponseEntity<TestResponseDTO> createTest(@RequestBody CreateTestDTO dto) {
         TestResponseDTO response = testService.createTest(dto);
         return ResponseEntity.ok(response);
     }
 
+    // --- AI CODE GENERATION ENDPOINT ---
+    @GetMapping("/generate-ai")
+    public ResponseEntity<String> generateAI(@RequestParam String description) {
+        try {
+            String code = aiCodeGeneratorService.generateSolution(description);
+            return ResponseEntity.ok(code != null ? code : "// AI failed to generate");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("// AI generation error: " + e.getMessage());
+        }
+    }
+
+    // --- GET TEST ---
     @GetMapping("/{id}")
     public ResponseEntity<TestDetailsDTO> getTest(@PathVariable Long id) {
         TestDetailsDTO response = testService.getTestDetails(id);
@@ -60,23 +78,24 @@ public class TestController {
     public ResponseEntity<?> getTestByToken(@PathVariable String token) {
         try {
             TestDetailsDTO test = testService.getTestByLinkToken(token);
-            
-            // Check if test is active
+
             if (test.getStatus() != null && !"active".equals(test.getStatus())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Test is not active. Please wait for your teacher to start the test.");
+                        .body("Test is not active. Please wait for your teacher to start the test.");
             }
-            
+
             return ResponseEntity.ok(test);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body("Test not found or link is invalid.");
+                    .body("Test not found or link is invalid.");
         }
     }
 
     @PostMapping("/link/{token}/submit")
-    public ResponseEntity<Student> submitStudentInfo(@PathVariable String token,
-                                                     @RequestBody StudentDTO dto) {
+    public ResponseEntity<Student> submitStudentInfo(
+            @PathVariable String token,
+            @RequestBody StudentDTO dto) {
+
         try {
             Student student = testService.saveStudentInfo(token, dto);
             return ResponseEntity.ok(student);
@@ -86,15 +105,16 @@ public class TestController {
     }
 
     @PostMapping("/link/{token}/submit-code")
-    public ResponseEntity<Student> submitFinalTest(@PathVariable String token,
-                                                   @RequestBody FinalSubmitDTO dto) {
+    public ResponseEntity<Student> submitFinalTest(
+            @PathVariable String token,
+            @RequestBody FinalSubmitDTO dto) {
+
         try {
             Student student = testService.saveFinalSubmission(token, dto);
             return ResponseEntity.ok(student);
         } catch (RuntimeException e) {
             e.printStackTrace();
-            return ResponseEntity.badRequest()
-                    .body(null);
+            return ResponseEntity.badRequest().body(null);
         }
     }
 
@@ -103,7 +123,7 @@ public class TestController {
         List<Student> students = testService.getStudentsByTest(testId);
         return ResponseEntity.ok(students);
     }
-    
+
     @DeleteMapping("/{id}")
     public ResponseEntity<String> deleteTest(@PathVariable Long id) {
         try {

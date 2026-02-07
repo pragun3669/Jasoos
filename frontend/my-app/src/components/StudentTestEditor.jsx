@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import axios from "axios";
 import { useAuth } from '../contexts/AuthContext';
 import { Editor } from '@monaco-editor/react';
 import { 
@@ -30,15 +31,16 @@ const StudentTestEditor = () => {
   const proctoringIntervalRef = useRef(null);
   const proctoringCanvasRef = useRef(null);
   const lastWarningTimeRef = useRef(0);
+  const editorContainerRef = useRef(null);
   const { user } = useAuth();
   const authToken = user?.token;
   const testToken = testLinkToken;
-  
+ 
   // Proctoring state
   const lastTabSwitchTimeRef = useRef(0);
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedLanguage, setSelectedLanguage] = useState('python');
+  const [selectedLanguage, setSelectedLanguage] = useState('cpp');
   const [code, setCode] = useState('');
   const [activeTab, setActiveTab] = useState('testcase');
   const [testCases, setTestCases] = useState([]);
@@ -56,7 +58,7 @@ const StudentTestEditor = () => {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [timerRunning, setTimerRunning] = useState(true);
   const [isTimerInitialized, setIsTimerInitialized] = useState(false);
-  const MAX_TAB_SWITCHES = 5;
+  const MAX_TAB_SWITCHES = 45;
   
   const [proctoringReady, setProctoringReady] = useState(false);
   const [faceReferenceData, setFaceReferenceData] = useState(null);
@@ -67,9 +69,8 @@ const StudentTestEditor = () => {
   const PROCTORING_BACKEND = proctoringBackend || "http://localhost:5001";
   const WARNING_COOLDOWN = 15000; // 15 seconds cooldown between warnings
   
+  // Only C++ language
   const languages = [
-    { id: 'python', name: 'Python', extension: 'py' },
-    { id: 'java', name: 'Java', extension: 'java' },
     { id: 'cpp', name: 'C++', extension: 'cpp' }
   ];
 
@@ -481,6 +482,7 @@ const StudentTestEditor = () => {
 
   // Main initialization effect
   useEffect(() => {
+    
     if (!test || !student) {
       navigate('/');
       return;
@@ -530,16 +532,6 @@ const StudentTestEditor = () => {
       initializeProctoring();
     }
   
-    // Load saved code
-    const savedCode = localStorage.getItem(`test-${test.id}-q0`);
-    if (savedCode) {
-      setCode(savedCode);
-    } else if (test.questions && test.questions.length > 0) {
-      const question = test.questions[0];
-      const language = question.language || 'python';
-      setSelectedLanguage(language);
-      setCode(getDefaultCode(language));
-    }
   
     // Initialize test cases
     if (test.questions && test.questions.length > 0) {
@@ -596,37 +588,60 @@ const StudentTestEditor = () => {
   
     document.addEventListener('visibilitychange', handleVisibilityChange);
   
-    // Copy/Paste handlers
+    // Copy/Paste handlers - ONLY block outside editor
     const handleCopyPasteCut = (e) => {
+      // Check if the event target is within the editor container
+      if (editorContainerRef.current && editorContainerRef.current.contains(e.target)) {
+        // Allow copy/paste in editor
+        return;
+      }
+      
+      // Block copy/paste outside editor
       e.preventDefault();
       setCopyPasteAttempts((prev) => {
         const newCount = prev + 1;
-        setCompilerOutput((prevOutput) => prevOutput + `⚠️ Copy/Paste/Cut disabled during exam\n`);
-        
-        const currentWarnings = JSON.parse(localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`) || '{}');
-        localStorage.setItem(`test-${test.id}-student-${student.id}-warnings`, JSON.stringify({
-          ...currentWarnings,
-          copyPasteAttempts: newCount
-        }));
+        setCompilerOutput(
+          (prevOutput) => prevOutput + `⚠️ Copy/Paste/Cut disabled outside editor area\n`
+        );
+
+        const currentWarnings = JSON.parse(
+          localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`) || '{}'
+        );
+
+        localStorage.setItem(
+          `test-${test.id}-student-${student.id}-warnings`,
+          JSON.stringify({
+            ...currentWarnings,
+            copyPasteAttempts: newCount
+          })
+        );
 
         return newCount;
       });
       return false;
     };
-  
+
+    const blockContextMenu = (e) => {
+      // Allow context menu in editor
+      if (editorContainerRef.current && editorContainerRef.current.contains(e.target)) {
+        return;
+      }
+      e.preventDefault();
+    };
+
     document.addEventListener('copy', handleCopyPasteCut);
     document.addEventListener('paste', handleCopyPasteCut);
     document.addEventListener('cut', handleCopyPasteCut);
-    document.addEventListener('contextmenu', (e) => e.preventDefault());
-  
+    document.addEventListener('contextmenu', blockContextMenu);
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('copy', handleCopyPasteCut);
       document.removeEventListener('paste', handleCopyPasteCut);
       document.removeEventListener('cut', handleCopyPasteCut);
-      document.removeEventListener('contextmenu', (e) => e.preventDefault());
-      
+      document.removeEventListener('contextmenu', blockContextMenu);
+
       if (proctoringIntervalRef.current) {
         clearInterval(proctoringIntervalRef.current);
       }
@@ -678,6 +693,38 @@ const StudentTestEditor = () => {
     }
   }, [code, test?.id, currentQuestionIndex]);
 
+  // 🔹 Backend Auto-Save (Sync draft code to backend)
+  useEffect(() => {
+    if (!student?.id || !test?.questions || !test.questions[currentQuestionIndex]) return;
+  
+    const questionId = test.questions[currentQuestionIndex].id;
+  
+    const debounceTimer = setTimeout(async () => {
+      try {
+        await axios.post(
+          "http://localhost:8081/api/last-code",
+          {
+            studentId: student.id,
+            testId: test.id,
+            questionId: questionId,
+            language: selectedLanguage,
+            code
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${user.token}`
+            }
+          }
+        );
+        console.log("✅ Draft synced to backend");
+      } catch (err) {
+        console.warn("⚠️ Failed to save draft:", err.message);
+      }
+    }, 1200);
+  
+    return () => clearTimeout(debounceTimer);
+  }, [code, student?.id, test?.id, currentQuestionIndex, selectedLanguage, user?.token]);  
+
   const formatTime = (seconds) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -699,11 +746,9 @@ const StudentTestEditor = () => {
 
   function getDefaultCode(language) {
     const templates = {
-      python: `def solution(input_data):\n    """\n    Your solution here\n    """\n    pass`,
-      java: `class Solution {\n    public String solution(String input) {\n        // Your code here\n        \n    }\n}`,
       cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    string solution(string input) {\n        // Your code here\n        \n    }\n};`
     };
-    return templates[language] || templates.python;
+    return templates[language] || templates.cpp;
   }
 
   const handleLanguageChange = (language) => {
@@ -713,29 +758,6 @@ const StudentTestEditor = () => {
 
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
-    
-    editor.onKeyDown((e) => {
-      const isCopy = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyC;
-      const isPaste = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV;
-      const isCut = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyX;
-      
-      if (isCopy || isPaste || isCut) {
-        e.preventDefault();
-        e.stopPropagation();
-        setCopyPasteAttempts(prev => {
-          const newCount = prev + 1;
-          setCompilerOutput((prevOutput) => prevOutput + `⚠️ Copy/Paste/Cut disabled\n`);
-          
-          const currentWarnings = JSON.parse(localStorage.getItem(`test-${test.id}-student-${student.id}-warnings`) || '{}');
-          localStorage.setItem(`test-${test.id}-student-${student.id}-warnings`, JSON.stringify({
-            ...currentWarnings,
-            copyPasteAttempts: newCount
-          }));
-
-          return newCount;
-        });
-      }
-    });
     
     monaco.editor.defineTheme('jasoos-dark', {
       base: 'vs-dark',
@@ -772,8 +794,8 @@ const StudentTestEditor = () => {
       const question = test.questions[currentQuestionIndex];
       if (!question) throw new Error('Question data missing');
 
-      const extMap = { python: 'py', java: 'java', cpp: 'cpp' };
-      const filename = `Solution.${extMap[selectedLanguage] || 'txt'}`;
+      const extMap = { cpp: 'cpp' };
+      const filename = `Solution.${extMap[selectedLanguage] || 'cpp'}`;
 
       const body = {
         language: selectedLanguage,
@@ -897,11 +919,31 @@ const StudentTestEditor = () => {
 
     setCurrentQuestionIndex(index);
     const question = test.questions[index];
-    const language = question.language || 'python';
+    const language = 'cpp'; // Always C++
     setSelectedLanguage(language);
 
-    const savedCode = localStorage.getItem(`test-${test.id}-q${index}`);
-    setCode(savedCode || getDefaultCode(language));
+    // 🔹 Fetch last saved draft from backend
+    const questionId = test.questions[index].id;
+
+    axios.get(
+      `http://localhost:8081/api/last-code/${student.id}/${test.id}/${questionId}`,
+      {
+        headers: { Authorization: `Bearer ${user.token}` }
+      }
+    )
+      .then(res => {
+        if (res.data?.code) {
+          setCode(res.data.code);
+          setSelectedLanguage(res.data.language || language);
+        } else {
+          const savedCode = localStorage.getItem(`test-${test.id}-q${index}`);
+          setCode(savedCode || getDefaultCode(language));
+        }
+      })
+      .catch(() => {
+        const savedCode = localStorage.getItem(`test-${test.id}-q${index}`);
+        setCode(savedCode || getDefaultCode(language));
+      });
 
     const formattedTestCases = question.testCases?.map((tc, i) => ({
       id: i + 1,
@@ -1099,12 +1141,14 @@ const StudentTestEditor = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+        {/* Dynamic Grid Layout - adjusts based on content */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-auto">
+          {/* Question Description Panel - Dynamic height */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Question {currentQuestionIndex + 1}
             </h2>
-            <div className="prose dark:prose-invert max-w-none">
+            <div className="prose dark:prose-invert max-w-none overflow-y-auto flex-1">
               <p className="text-gray-700 dark:text-gray-300 mb-4 whitespace-pre-wrap">
                 {currentQuestion.description}
               </p>
@@ -1138,23 +1182,18 @@ const StudentTestEditor = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+          {/* Code Editor Panel - Dynamic height */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col">
             <div className="border-b border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <span className="text-lg font-semibold text-gray-900 dark:text-white">Code</span>
                   
+                  {/* Language selector - shows only C++ */}
                   <div className="relative">
-                    <select
-                      value={selectedLanguage}
-                      onChange={(e) => handleLanguageChange(e.target.value)}
-                      className="appearance-none bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-1 rounded border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-400 pr-8"
-                    >
-                      {languages.map(lang => (
-                        <option key={lang.id} value={lang.id}>{lang.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                    <div className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-1 rounded border border-gray-300 dark:border-gray-600">
+                      C++
+                    </div>
                   </div>
                 </div>
 
@@ -1168,7 +1207,8 @@ const StudentTestEditor = () => {
               </div>
             </div>
 
-            <div className="h-96">
+            {/* Editor container with ref for copy/paste detection */}
+            <div ref={editorContainerRef} className="flex-1 min-h-[400px]">
               <Editor
                 height="100%"
                 language={selectedLanguage}
@@ -1183,8 +1223,8 @@ const StudentTestEditor = () => {
                   automaticLayout: true,
                   tabSize: 2,
                   wordWrap: 'on',
-                  contextmenu: false,
-                  quickSuggestions: false
+                  contextmenu: true,
+                  quickSuggestions: true
                 }}
               />
             </div>
@@ -1211,6 +1251,7 @@ const StudentTestEditor = () => {
           </div>
         </div>
 
+        {/* Test Cases and Results Panel */}
         <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
           <div className="border-b border-gray-200 dark:border-gray-700">
             <div className="flex">

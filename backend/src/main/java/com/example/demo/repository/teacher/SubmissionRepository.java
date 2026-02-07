@@ -13,4 +13,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     
     // New method to fetch submissions of a student for a specific test
     List<Submission> findByStudentIdAndTestId(Long studentId, Long testId);
+    List<Submission> findByTestIdAndStudentId(Long testId, Long studentId);
+    Submission findTopByStudentIdAndTestIdAndQuestionIdOrderByCreatedAtDesc(
+            Long studentId,
+            Long testId,
+            Long questionId
+    );
 }
