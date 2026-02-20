@@ -60,6 +60,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/internal/runner/**").permitAll() // public runner
                 .requestMatchers("/api/tests/link/**").permitAll()  
                 .requestMatchers("/api/last-code/**").permitAll()
+                .requestMatchers("/api/tests/ai-generate").permitAll()
                 .requestMatchers("/api/tests/*/results**").hasRole("TEACHER")
                 .anyRequest().authenticated()                        // everything else requires login
             )

@@ -20,7 +20,7 @@ const FaceCheck = () => {
 
         // Send frame to backend
         try {
-          const res = await axios.post("http://localhost:5001/process-frame", {
+          const res = await axios.post("http://localhost:8000/proctoring/process-frame", {
             frame,
           });
           console.log(res.data);

@@ -12,43 +12,52 @@ import com.example.demo.dto.TestResponseDTO;
 import com.example.demo.dto.TestDetailsDTO;
 import com.example.demo.dto.StudentDTO;
 import com.example.demo.dto.StudentResultDTO;
+import com.example.demo.dto.AITestGenerationRequestDTO;
 import com.example.demo.entity.teacher.Student;
 import com.example.demo.service.TestService;
-import com.example.demo.service.AICodeGeneratorService;
-
+import com.example.demo.service.AITestService;
 
 @RestController
 @RequestMapping("/api/tests")
 public class TestController {
 
     private final TestService testService;
-    private final AICodeGeneratorService aiCodeGeneratorService;
+    private final AITestService aiTestService;
 
-    public TestController(TestService testService, AICodeGeneratorService aiCodeGeneratorService) {
+    public TestController(TestService testService,
+                          AITestService aiTestService) {
         this.testService = testService;
-        this.aiCodeGeneratorService = aiCodeGeneratorService;
+        this.aiTestService = aiTestService;
     }
 
-    // --- CREATE TEST ---
+    // ============================================================
+    // CREATE TEST (Manual Create)
+    // ============================================================
     @PostMapping
     public ResponseEntity<TestResponseDTO> createTest(@RequestBody CreateTestDTO dto) {
         TestResponseDTO response = testService.createTest(dto);
         return ResponseEntity.ok(response);
     }
 
-    // --- AI CODE GENERATION ENDPOINT ---
-    @GetMapping("/generate-ai")
-    public ResponseEntity<String> generateAI(@RequestParam String description) {
+    // ============================================================
+    // AI TEST GENERATION (Full Test via FastAPI)
+    // ============================================================
+    @PostMapping("/ai-generate")
+    public ResponseEntity<Object> generateAITest(
+            @RequestBody AITestGenerationRequestDTO request
+    ) {
         try {
-            String code = aiCodeGeneratorService.generateSolution(description);
-            return ResponseEntity.ok(code != null ? code : "// AI failed to generate");
+            Object aiResponse = aiTestService.generateTest(request);
+                return ResponseEntity.ok(aiResponse);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("// AI generation error: " + e.getMessage());
+                    .body("AI generation failed: " + e.getMessage());
         }
     }
 
-    // --- GET TEST ---
+    // ============================================================
+    // GET TEST
+    // ============================================================
     @GetMapping("/{id}")
     public ResponseEntity<TestDetailsDTO> getTest(@PathVariable Long id) {
         TestDetailsDTO response = testService.getTestDetails(id);
@@ -64,6 +73,9 @@ public class TestController {
         return ResponseEntity.ok(response);
     }
 
+    // ============================================================
+    // GENERATE TEST LINK
+    // ============================================================
     @PostMapping("/{testId}/generate-link")
     public ResponseEntity<String> generateTestLink(@PathVariable Long testId) {
         try {
@@ -74,6 +86,9 @@ public class TestController {
         }
     }
 
+    // ============================================================
+    // ACCESS TEST VIA LINK
+    // ============================================================
     @GetMapping("/link/{token}")
     public ResponseEntity<?> getTestByToken(@PathVariable String token) {
         try {
@@ -91,6 +106,9 @@ public class TestController {
         }
     }
 
+    // ============================================================
+    // STUDENT INFO SUBMISSION
+    // ============================================================
     @PostMapping("/link/{token}/submit")
     public ResponseEntity<Student> submitStudentInfo(
             @PathVariable String token,
@@ -104,6 +122,9 @@ public class TestController {
         }
     }
 
+    // ============================================================
+    // FINAL CODE SUBMISSION
+    // ============================================================
     @PostMapping("/link/{token}/submit-code")
     public ResponseEntity<Student> submitFinalTest(
             @PathVariable String token,
@@ -118,12 +139,18 @@ public class TestController {
         }
     }
 
+    // ============================================================
+    // GET STUDENTS
+    // ============================================================
     @GetMapping("/{testId}/students")
     public ResponseEntity<List<Student>> getStudentsForTest(@PathVariable Long testId) {
         List<Student> students = testService.getStudentsByTest(testId);
         return ResponseEntity.ok(students);
     }
 
+    // ============================================================
+    // DELETE TEST (Soft Delete)
+    // ============================================================
     @DeleteMapping("/{id}")
     public ResponseEntity<String> deleteTest(@PathVariable Long id) {
         try {
@@ -134,6 +161,9 @@ public class TestController {
         }
     }
 
+    // ============================================================
+    // START / STOP TEST
+    // ============================================================
     @PostMapping("/{testId}/start")
     public ResponseEntity<String> startTest(@PathVariable Long testId) {
         try {
@@ -154,6 +184,9 @@ public class TestController {
         }
     }
 
+    // ============================================================
+    // RESULTS
+    // ============================================================
     @GetMapping("/{testId}/results")
     public ResponseEntity<List<StudentResultDTO>> getTestResults(@PathVariable Long testId) {
         List<StudentResultDTO> results = testService.getTestResults(testId);

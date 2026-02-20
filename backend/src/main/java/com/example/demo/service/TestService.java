@@ -71,8 +71,6 @@ public class TestService {
         this.plagiarismController = plagiarismController;
     }
 
-    @Autowired
-    private AICodeGeneratorService aiCodeGeneratorService;
     
 
     // --- CREATE TEST ---
@@ -100,30 +98,25 @@ public class TestService {
         q.setDescription(qdto.getDescription());
         q.setMarks(qdto.getMarks());
         q.setTest(parentTest);
-
+    
         q.setMaxInputSize(qdto.getMaxInputSize());
         q.setComplexity(qdto.getComplexity());
         q.setBaseTimeLimit(qdto.getBaseTimeLimit() != null ? qdto.getBaseTimeLimit() : 1.0);
-
+    
         double finalTimeLimit = calculateTimeLimit(q.getMaxInputSize(), q.getComplexity(), q.getBaseTimeLimit());
         q.setTimeLimitSec(finalTimeLimit);
-
-        //  ✅ FIXED: AI Code Generation (correct variable: q instead of question)
-        try {
-            String aiCode = aiCodeGeneratorService.generateSolution(qdto.getDescription());
-            q.setAiGeneratedSolution(aiCode);
-        } catch (Exception e) {
-            System.out.println("AI generation failed for question: " + qdto.getDescription());
-            q.setAiGeneratedSolution("// AI generation failed");
-        }
-
+    
         qdto.getTestCases().forEach(tcDto -> {
             TestCase testCase = mapToTestCaseEntity(tcDto, q);
             q.addTestCase(testCase);
         });
-
+    
+        // ✅ NOW we simply store AI solution sent from FastAPI
+        q.setAiGeneratedSolution(qdto.getAiSolution());
+    
         return q;
     }
+    
 
     private double calculateTimeLimit(Long maxInputSize, String complexity, Double baseTimeLimit) {
         if (maxInputSize == null || complexity == null || baseTimeLimit == null || maxInputSize <= 0) {

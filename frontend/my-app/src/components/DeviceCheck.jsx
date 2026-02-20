@@ -57,7 +57,7 @@ const DeviceCheck = ({ onProceed, onBack }) => {
     { key: 'tabSwitching', title: 'Tab Monitoring', icon: Eye }
   ];
 
-  const PROCTORING_BACKEND = "http://localhost:5001";
+  const PROCTORING_BACKEND =  "http://localhost:8000/proctoring";
 
   const updateCheck = useCallback((key, status, message) => {
     setChecks(prev => ({

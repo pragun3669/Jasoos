@@ -29,7 +29,7 @@ public class PlagiarismController {
      */
     public Double callPlagiarismService(String codeA, String codeB) {
         try {
-            String url = "http://localhost:8001/predict";
+            String url = "http://localhost:8000/plagiarism/predict";
     
             Map<String, Object> payload = new HashMap<>();
             payload.put("codeA", codeA);

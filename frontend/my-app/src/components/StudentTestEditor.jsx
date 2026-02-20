@@ -66,7 +66,7 @@ const StudentTestEditor = () => {
   const [showViolationAlert, setShowViolationAlert] = useState(false);
   const [violationType, setViolationType] = useState('');
   const [violationMessage, setViolationMessage] = useState('');
-  const PROCTORING_BACKEND = proctoringBackend || "http://localhost:5001";
+  const PROCTORING_BACKEND = proctoringBackend || "http://localhost:8000/proctoring";
   const WARNING_COOLDOWN = 15000; // 15 seconds cooldown between warnings
   
   // Only C++ language
