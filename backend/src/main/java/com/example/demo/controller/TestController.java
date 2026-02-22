@@ -1,6 +1,8 @@
 package com.example.demo.controller;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,20 +37,16 @@ public class TestController {
     // ============================================================
     @PostMapping
     public ResponseEntity<TestResponseDTO> createTest(@RequestBody CreateTestDTO dto) {
-        TestResponseDTO response = testService.createTest(dto);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(testService.createTest(dto));
     }
 
     // ============================================================
     // AI TEST GENERATION (Full Test via FastAPI)
     // ============================================================
     @PostMapping("/ai-generate")
-    public ResponseEntity<Object> generateAITest(
-            @RequestBody AITestGenerationRequestDTO request
-    ) {
+    public ResponseEntity<Object> generateAITest(@RequestBody AITestGenerationRequestDTO request) {
         try {
-            Object aiResponse = aiTestService.generateTest(request);
-                return ResponseEntity.ok(aiResponse);
+            return ResponseEntity.ok(aiTestService.generateTest(request));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("AI generation failed: " + e.getMessage());
@@ -61,16 +59,30 @@ public class TestController {
     @GetMapping("/{id}")
     public ResponseEntity<TestDetailsDTO> getTest(@PathVariable Long id) {
         TestDetailsDTO response = testService.getTestDetails(id);
-        if (response == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(response);
+        return response == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(response);
     }
 
     @GetMapping("/teacher/{teacherId}")
     public ResponseEntity<List<TestDetailsDTO>> getTestsByTeacher(@PathVariable Long teacherId) {
-        List<TestDetailsDTO> response = testService.getTestsByTeacher(teacherId);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(testService.getTestsByTeacher(teacherId));
+    }
+
+    // ============================================================
+    // TEST SUMMARY  (lightweight — no plagiarism checks)
+    // Used by the dashboard to show student counts without triggering
+    // the plagiarism service. Only /results triggers plagiarism.
+    // ============================================================
+    @GetMapping("/{testId}/summary")
+    public ResponseEntity<Map<String, Object>> getTestSummary(@PathVariable Long testId) {
+        List<Student> students = testService.getStudentsByTest(testId);
+        long submittedCount = students.stream()
+                .filter(s -> s.getSubmittedAt() != null)
+                .count();
+
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("totalStudents", students.size());
+        summary.put("submittedCount", submittedCount);
+        return ResponseEntity.ok(summary);
     }
 
     // ============================================================
@@ -79,8 +91,7 @@ public class TestController {
     @PostMapping("/{testId}/generate-link")
     public ResponseEntity<String> generateTestLink(@PathVariable Long testId) {
         try {
-            String link = testService.generateTestLink(testId);
-            return ResponseEntity.ok(link);
+            return ResponseEntity.ok(testService.generateTestLink(testId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -93,12 +104,10 @@ public class TestController {
     public ResponseEntity<?> getTestByToken(@PathVariable String token) {
         try {
             TestDetailsDTO test = testService.getTestByLinkToken(token);
-
             if (test.getStatus() != null && !"active".equals(test.getStatus())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body("Test is not active. Please wait for your teacher to start the test.");
             }
-
             return ResponseEntity.ok(test);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -113,10 +122,8 @@ public class TestController {
     public ResponseEntity<Student> submitStudentInfo(
             @PathVariable String token,
             @RequestBody StudentDTO dto) {
-
         try {
-            Student student = testService.saveStudentInfo(token, dto);
-            return ResponseEntity.ok(student);
+            return ResponseEntity.ok(testService.saveStudentInfo(token, dto));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().build();
         }
@@ -129,10 +136,8 @@ public class TestController {
     public ResponseEntity<Student> submitFinalTest(
             @PathVariable String token,
             @RequestBody FinalSubmitDTO dto) {
-
         try {
-            Student student = testService.saveFinalSubmission(token, dto);
-            return ResponseEntity.ok(student);
+            return ResponseEntity.ok(testService.saveFinalSubmission(token, dto));
         } catch (RuntimeException e) {
             e.printStackTrace();
             return ResponseEntity.badRequest().body(null);
@@ -144,8 +149,7 @@ public class TestController {
     // ============================================================
     @GetMapping("/{testId}/students")
     public ResponseEntity<List<Student>> getStudentsForTest(@PathVariable Long testId) {
-        List<Student> students = testService.getStudentsByTest(testId);
-        return ResponseEntity.ok(students);
+        return ResponseEntity.ok(testService.getStudentsByTest(testId));
     }
 
     // ============================================================
@@ -185,11 +189,10 @@ public class TestController {
     }
 
     // ============================================================
-    // RESULTS
+    // RESULTS  (triggers plagiarism checks — only call on demand)
     // ============================================================
     @GetMapping("/{testId}/results")
     public ResponseEntity<List<StudentResultDTO>> getTestResults(@PathVariable Long testId) {
-        List<StudentResultDTO> results = testService.getTestResults(testId);
-        return ResponseEntity.ok(results);
+        return ResponseEntity.ok(testService.getTestResults(testId));
     }
 }

@@ -15,7 +15,7 @@ import SettingsPage from './components/SettingsPage';
 import HelpPage from './components/HelpPage';
 import StudentPage from './components/StudentPage';
 import DeviceCheck from './components/DeviceCheck';
-import StudentTestEditor from './components/StudentTestEditor';
+import StudentTestEditor from './components/studentTest/StudentTestEditor';
 import TestComplete from './components/TestComplete';
 import TeacherTestResultsPage from './components/TeacherTestResultsPage';
 import ThankYou from './components/ThankYou';
