@@ -2,11 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.dto.RunnerResultDTO;
 import com.example.demo.dto.SubmissionRequest;
-import com.example.demo.entity.teacher.Question;
-import com.example.demo.entity.teacher.Submission;
-import com.example.demo.entity.teacher.SubmissionResult;
-import com.example.demo.entity.teacher.Test;
-import com.example.demo.entity.teacher.TestCase;
+import com.example.demo.entity.teacher.*;
 import com.example.demo.repository.teacher.*;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
@@ -47,7 +43,7 @@ public class SubmissionService {
     }
 
     // =========================
-    // CREATE SUBMISSION (FIXED!)
+    // CREATE SUBMISSION
     // =========================
     public Submission createSubmission(Long testId, SubmissionRequest request, Long studentId) {
 
@@ -55,11 +51,8 @@ public class SubmissionService {
                 .orElseThrow(() -> new RuntimeException("Test not found: " + testId));
 
         Submission submission = new Submission();
-
-        // CRITICAL FIX
-        submission.setTest(test);      // sets JPA relation → Fills test_id in DB
-        submission.setTestId(testId);  // optional but OK
-
+        submission.setTest(test);
+        submission.setTestId(testId);
         submission.setStudentId(studentId);
         submission.setQuestionId(request.getQuestionId());
         submission.setFilename(request.getFilename());
@@ -69,34 +62,18 @@ public class SubmissionService {
         submission.setStatus("PENDING");
 
         Submission saved = submissionRepository.save(submission);
-
         sendToRunner(saved);
 
         return saved;
     }
 
     // =========================
-    // GET SUBMISSION
-    // =========================
-    public Submission getSubmission(Long id) {
-        return submissionRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Submission not found with id: " + id));
-    }
-
-    public List<SubmissionResult> getResultsForSubmission(Long submissionId) {
-        return submissionResultRepository.findBySubmissionId(submissionId);
-    }
-    public List<Submission> getSubmissionsForStudent(Long studentId, Long testId) {
-        return submissionRepository.findByStudentIdAndTestId(studentId, testId);
-    }
-    
-    // =========================
     // SEND CODE TO RUNNER
     // =========================
     private void sendToRunner(Submission s) {
         try {
             Question question = questionRepository.findById(s.getQuestionId())
-                    .orElseThrow(() -> new EntityNotFoundException("Question not found with id: " + s.getQuestionId()));
+                    .orElseThrow(() -> new EntityNotFoundException("Question not found"));
 
             Map<String, Object> job = new HashMap<>();
             job.put("submissionId", s.getId());
@@ -105,8 +82,8 @@ public class SubmissionService {
             job.put("timeLimitSec", question.getTimeLimitSec());
 
             List<TestCase> testCases = testCaseRepository.findByQuestionId(s.getQuestionId());
-            List<Map<String, Object>> caseList = new ArrayList<>();
 
+            List<Map<String, Object>> caseList = new ArrayList<>();
             for (TestCase tc : testCases) {
                 Map<String, Object> map = new HashMap<>();
                 map.put("testCaseId", tc.getId());
@@ -116,11 +93,9 @@ public class SubmissionService {
 
             job.put("testCases", caseList);
 
-            ResponseEntity<String> response = restTemplate.postForEntity(runnerUrl, job, String.class);
-            System.out.println("Runner response: " + response.getBody());
+            restTemplate.postForEntity(runnerUrl, job, String.class);
 
         } catch (Exception e) {
-            System.err.println("Runner error: " + e.getMessage());
             s.setStatus("FAILED");
             s.setCompileOutput("Runner error: " + e.getMessage());
             submissionRepository.save(s);
@@ -134,10 +109,17 @@ public class SubmissionService {
     public void handleRunnerCallback(RunnerResultDTO dto) {
 
         Submission submission = submissionRepository.findById(dto.getSubmissionId())
-                .orElseThrow(() -> new EntityNotFoundException("Submission not found with id: " + dto.getSubmissionId()));
+                .orElseThrow(() -> new EntityNotFoundException("Submission not found"));
 
-        submission.setStatus(dto.getStatus());
         submission.setCompileOutput(dto.getCompileOutput());
+
+        // If compilation error → stop immediately
+        if ("CE".equals(dto.getStatus())) {
+            submission.setStatus("CE");
+            submission.setScore(0);
+            submissionRepository.save(submission);
+            return;
+        }
 
         List<Long> testCaseIds = dto.getResults().stream()
                 .map(RunnerResultDTO.TestResultDTO::getTestCaseId)
@@ -148,6 +130,8 @@ public class SubmissionService {
                         .collect(Collectors.toMap(TestCase::getId, Function.identity()));
 
         List<SubmissionResult> toSave = new ArrayList<>();
+
+        boolean allPassed = true;
 
         for (RunnerResultDTO.TestResultDTO tr : dto.getResults()) {
 
@@ -164,24 +148,77 @@ public class SubmissionService {
             sr.setInputData(tc.getInputData());
             sr.setExpectedOutput(tc.getExpectedOutput());
 
-            if ("TLE".equals(tr.getStatus())) sr.setStatus("TLE");
-            else if ("CE".equals(dto.getStatus())) sr.setStatus("CE");
-            else {
-                String expected = tc.getExpectedOutput().trim();
-                String actual = (tr.getStdout() != null ? tr.getStdout().trim() : "");
-                sr.setStatus(expected.equals(actual) ? "AC" : "WA");
+            String finalStatus;
+
+            if ("TLE".equals(tr.getStatus())) {
+                finalStatus = "TLE";
+                allPassed = false;
+            } else if ("RTE".equals(tr.getStatus())) {
+                finalStatus = "RTE";
+                allPassed = false;
+            } else {
+                String expected = normalize(tc.getExpectedOutput());
+                String actual = normalize(tr.getStdout());
+
+                if (expected.equals(actual)) {
+                    finalStatus = "AC";
+                } else {
+                    finalStatus = "WA";
+                    allPassed = false;
+                }
             }
 
+            sr.setStatus(finalStatus);
             toSave.add(sr);
         }
 
         submissionResultRepository.saveAll(toSave);
 
-        long passed = toSave.stream().filter(r -> "AC".equals(r.getStatus())).count();
-        long total = testCaseRepository.countByQuestionId(submission.getQuestionId());
+        long passed = toSave.stream()
+                .filter(r -> "AC".equals(r.getStatus()))
+                .count();
+
+        long total = toSave.size();
         int score = (total > 0) ? (int) ((double) passed / total * 100) : 0;
+
         submission.setScore(score);
+        submission.setStatus(allPassed ? "AC" : "FAILED");
 
         submissionRepository.save(submission);
+    }
+    // =========================
+// GET SINGLE SUBMISSION
+// =========================
+public Submission getSubmission(Long id) {
+    return submissionRepository.findById(id)
+            .orElseThrow(() ->
+                    new EntityNotFoundException("Submission not found with id: " + id));
+}
+
+
+// =========================
+// GET RESULTS FOR SUBMISSION
+// =========================
+public List<SubmissionResult> getResultsForSubmission(Long submissionId) {
+    return submissionResultRepository.findBySubmissionId(submissionId);
+}
+
+
+// =========================
+// GET ALL SUBMISSIONS FOR STUDENT IN TEST
+// =========================
+public List<Submission> getSubmissionsForStudent(Long testId, Long studentId) {
+    return submissionRepository.findByStudentIdAndTestId(studentId, testId);
+}
+
+    // =========================
+    // OUTPUT NORMALIZER (IMPORTANT)
+    // =========================
+    private String normalize(String s) {
+        if (s == null) return "";
+        return s.trim()
+                .replace("\r", "")
+                .replaceAll("[ \t]+", " ")
+                .replaceAll("\n+", "\n");
     }
 }

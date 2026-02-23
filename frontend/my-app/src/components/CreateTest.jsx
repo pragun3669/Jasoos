@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import {
-  Plus, Save, Code, Trash2, CheckCircle, AlertCircle,
-  Sparkles, FileCode, Clock, Hash, Wand2, ChevronDown,
-  ChevronUp, RefreshCw, Eye, EyeOff, Terminal, Zap, ArrowRight, Star
+  Plus, Save,Trash2, CheckCircle, AlertCircle,
+  Sparkles, FileCode, Clock, Wand2, ChevronDown,
+  ChevronUp, RefreshCw, Eye, Terminal, Zap, ArrowRight
 } from 'lucide-react';
 import axios from 'axios';
+import { API_URL } from "../config";
 import { useAuth } from '../contexts/AuthContext';
 
 /* ─────────────────────────────────────────────
@@ -31,7 +32,7 @@ const AIGeneratePanel = ({ onQuestionsGenerated }) => {
     setIsGenerating(true);
     try {
       const response = await axios.post(
-        'http://localhost:8081/api/tests/ai-generate',
+        `${API_URL}/api/tests/ai-generate`,
         {
           topic: aiConfig.topic,
           difficulty: aiConfig.difficulty,
@@ -604,7 +605,7 @@ const CreateTest = () => {
       })),
     };
     try {
-      await axios.post('http://localhost:8081/api/tests', payload, {
+      await axios.post(`${API_URL}/api/tests`, payload, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
       alert('Test created successfully!');

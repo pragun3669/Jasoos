@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import axios from "axios";
-
+import { AI_SERVICE_URL } from "../config";
 const FaceCheck = () => {
   const videoRef = useRef(null);
 
@@ -20,7 +20,7 @@ const FaceCheck = () => {
 
         // Send frame to backend
         try {
-          const res = await axios.post("http://localhost:8000/proctoring/process-frame", {
+          const res = await axios.post(`${AI_SERVICE_URL}/proctoring/process-frame`, {
             frame,
           });
           console.log(res.data);

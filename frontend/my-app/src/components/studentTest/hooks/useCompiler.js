@@ -1,6 +1,6 @@
 import { useState, useCallback} from "react";
-
-const SUBMISSION_API = "http://localhost:8081/api/submissions";
+import { API_URL } from "../../../config";
+const SUBMISSION_API = `${API_URL}/api/submissions`;
 
 /**
  * useCompiler

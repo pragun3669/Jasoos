@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   User, Mail, Phone, Users, ArrowRight, Shield, Clock, AlertCircle, CheckCircle
 } from 'lucide-react';
-
+import { API_URL } from "../config";
 const StudentPage = () => {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -31,7 +31,7 @@ const StudentPage = () => {
         setLoading(true);
         setError('');
 
-        const response = await fetch(`http://localhost:8081/api/tests/link/${token}`);
+        const response = await fetch(`${API_URL}/api/tests/link/${token}`);
 
         
         if (!response.ok) {
@@ -80,7 +80,7 @@ const StudentPage = () => {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Please enter a valid email address';
 
     if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    else if (!/^\+?[\d\s\-\(\)]{10,}$/.test(formData.phone.replace(/\s/g, '')))
+    else if (!/^\+?[\d\s\-()]{10,}$/.test(formData.phone.replace(/\s/g, '')))
       newErrors.phone = 'Please enter a valid phone number';
 
     if (!formData.batch.trim()) newErrors.batch = 'Batch/Class information is required';
@@ -103,7 +103,7 @@ const StudentPage = () => {
         batch: formData.batch
       };
 
-      const response = await fetch(`http://localhost:8081/api/tests/link/${token}/submit`, {
+      const response = await fetch(`${API_URL}/api/tests/link/${token}/submit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

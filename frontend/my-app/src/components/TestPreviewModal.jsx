@@ -6,7 +6,6 @@ import {
   Clock, 
   Hash, 
   CheckCircle, 
-  Play,
   Eye,
   Calendar,
   User

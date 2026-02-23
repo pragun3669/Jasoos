@@ -33,27 +33,27 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginDTO loginDTO) {
+
         Map<String, Object> response = new HashMap<>();
+
         try {
-            // Authenticate teacher
-            Teacher teacher = authService.loginTeacher(loginDTO.getUsername(), loginDTO.getPassword());
+            Teacher teacher = authService.loginTeacher(
+                    loginDTO.getUsername(),
+                    loginDTO.getPassword()
+            );
 
-            // Generate JWT token
-           // Generate JWT token
-String token = jwtUtil.generateToken(
-    teacher.getUsername(),
-    teacher.getId(),
-    teacher.getRole()
-);
+            String token = jwtUtil.generateToken(
+                    teacher.getUsername(),
+                    teacher.getId(),
+                    teacher.getRole()
+            );
 
-
-            // Return teacher info + token
             Map<String, Object> userData = new HashMap<>();
             userData.put("id", teacher.getId());
             userData.put("username", teacher.getUsername());
             userData.put("name", teacher.getName());
             userData.put("role", teacher.getRole());
-            userData.put("token", token);  // <-- Add JWT token here
+            userData.put("token", token);
 
             response.put("success", true);
             response.put("message", "Login successful!");
@@ -62,10 +62,53 @@ String token = jwtUtil.generateToken(
             return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
-            // Invalid credentials
+
             response.put("success", false);
             response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(response);
+        }
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<Map<String, Object>> googleLogin(@RequestBody Map<String, String> body) {
+
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            String idTokenString = body.get("token");
+
+            Teacher teacher = authService.loginWithGoogle(idTokenString);
+
+            String token = jwtUtil.generateToken(
+                    teacher.getUsername(),
+                    teacher.getId(),
+                    teacher.getRole()
+            );
+
+            Map<String, Object> userData = new HashMap<>();
+            userData.put("id", teacher.getId());
+            userData.put("username", teacher.getUsername());
+            userData.put("name", teacher.getName());
+            userData.put("role", teacher.getRole());
+            userData.put("token", token);
+
+            response.put("success", true);
+            response.put("message", "Google login successful!");
+            response.put("user", userData);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+
+            response.put("success", false);
+            response.put("message", "Google authentication failed");
+
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(response);
         }
     }
 }

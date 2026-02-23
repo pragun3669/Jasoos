@@ -6,6 +6,7 @@ __pycache__/
 .env
 venv/
 backend/ai-services/venv/
+frontend/my-app/.env
 # Node
 node_modules/
 dist/

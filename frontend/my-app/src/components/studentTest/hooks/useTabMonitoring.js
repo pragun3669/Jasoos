@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 const TAB_SWITCH_KEY = "studentTest_tabSwitches_";
-const MAX_TAB_SWITCHES = 45;
+const MAX_TAB_SWITCHES = 20;
 
 /**
  * useTabMonitoring

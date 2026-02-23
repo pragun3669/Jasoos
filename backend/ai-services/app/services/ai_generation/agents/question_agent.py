@@ -10,34 +10,49 @@ def question_agent(state: dict) -> dict:
     count = state["count"]
 
     prompt = f"""
-Generate {count} UNIQUE DSA coding questions.
+Generate {count} UNIQUE competitive programming (CP-style) DSA coding questions.
 
 Topic: {topic}
 Difficulty: {difficulty}
 
-Each question must follow a LeetCode-style structure and be highly detailed.
+IMPORTANT:
+This platform uses STANDARD INPUT / STANDARD OUTPUT (like CodeChef / Codeforces).
+
+Each question must follow STRICT Competitive Programming format.
 
 Requirements:
 - Coding type problem
 - NO solution
 - NO implementation hints
-- NO test case section
+- NO test case JSON section
 - Clear and professional formatting
 - Each question must be completely different
 
 Each problem description MUST include:
 
-1. Problem Statement (clear real-world or abstract context)
-2. Function Signature (e.g., implement function solve(...) )
-3. Input Format
-4. Output Format
-5. Constraints (realistic bounds like 1 ≤ n ≤ 10^5)
-6. At least 2 Examples
-   - Input
-   - Output
-   - Explanation
+1. Problem Statement (clear context)
+2. Input Format section
+   - Clearly explain how input is read from STDIN.
+   - Example:
+       First line contains integer n.
+       Second line contains n space-separated integers.
+3. Output Format section
+   - Clearly explain what to print to STDOUT.
+4. Constraints (realistic CP bounds like 1 ≤ n ≤ 10^5)
+5. At least 2 Examples
+   Each example must show:
+       Input:
+       <exact stdin format>
+       Output:
+       <exact expected output>
+       Explanation:
 
-Return STRICT JSON only.
+STRICT RULES:
+- DO NOT use LeetCode-style function signature.
+- DO NOT mention class Solution.
+- DO NOT include function-only problems.
+- DO NOT include markdown.
+- Return STRICT JSON only.
 
 Format:
 {{

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-
+import { AI_SERVICE_URL } from "../../../config";
 const WARNING_COOLDOWN = 15000; // 15 seconds between warnings
 
 export default function useProctoring({
@@ -20,7 +20,7 @@ export default function useProctoring({
   const [violationType, setViolationType] = useState("");
 
   const PROCTORING_BACKEND =
-    proctoringBackend || "http://localhost:8000/proctoring";
+    proctoringBackend || `${AI_SERVICE_URL}/proctoring`;
 
   // ─── Draw bounding boxes on overlay canvas ────────────────────────────────
   const drawLiveBoundingBoxes = useCallback((canvas, video, data) => {

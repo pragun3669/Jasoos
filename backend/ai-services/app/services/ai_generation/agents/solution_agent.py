@@ -8,19 +8,25 @@ def solution_agent(state: dict) -> dict:
         prompt = f"""
 You are a competitive programming expert.
 
-Provide a clean and efficient C++17 solution for the following problem.
+Provide a clean and efficient C++17 solution.
+
+IMPORTANT:
+- Read input using standard input (cin).
+- Print output using cout.
+- Do NOT use class Solution.
+- Include main().
+- Follow EXACT input format described in the problem.
+- Ensure solution runs in O(N) or required complexity.
+- Include necessary headers.
+- Code must compile.
 
 Problem:
 {question["description"]}
 
 STRICT RULES:
 - Return ONLY raw C++ code.
-- Do NOT use markdown.
-- Do NOT wrap in ```cpp.
-- Do NOT add explanation.
-- Include necessary includes.
-- Include main() if required.
-- Ensure code compiles.
+- No markdown.
+- No explanations.
 """
 
         solution = call_llm(prompt).strip()

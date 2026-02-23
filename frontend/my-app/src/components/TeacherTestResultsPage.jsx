@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { API_URL } from "../config";
 import {
   Eye,
   Search,
@@ -39,11 +40,8 @@ const TeacherTestResultsPage = () => {
   const [expandedCode, setExpandedCode] = useState([]);
   const [error, setError] = useState(null);
 
-  const API_BASE_URL = 'http://localhost:8081/api';
+  const API_BASE_URL = `${API_URL}/api`;
 
-  useEffect(() => {
-    fetchTeacherTests();
-  }, [teacherId, token]);
 
   const normalizeDate = (value) => {
     if (!value) return null;
@@ -80,21 +78,23 @@ const TeacherTestResultsPage = () => {
 
   // ✅ Uses /summary — lightweight endpoint, does NOT trigger plagiarism service.
   // /results is only ever called when teacher explicitly clicks "View Results".
-  const fetchTeacherTests = async () => {
+  const fetchTeacherTests = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-
-      if (!teacherId || !token) throw new Error('Missing authentication.');
+  
+      // Basic validation
+      if (!teacherId || !token) {
+        throw new Error('Missing authentication.');
+      }
+  
       const response = await fetch(`${API_BASE_URL}/tests/teacher/${teacherId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-
+  
       if (!response.ok) throw new Error('Failed to fetch tests');
       const data = await response.json();
-
-      console.log('Fetched tests:', data);
-
+  
       const testsWithCounts = await Promise.all(
         data.map(async (test) => {
           try {
@@ -102,7 +102,7 @@ const TeacherTestResultsPage = () => {
               headers: { Authorization: `Bearer ${token}` }
             });
             const summary = summaryRes.ok ? await summaryRes.json() : {};
-
+  
             return {
               id: test.id,
               title: test.title,
@@ -125,16 +125,20 @@ const TeacherTestResultsPage = () => {
           }
         })
       );
-
+  
       setTests(testsWithCounts);
     } catch (err) {
-      setError('Failed to fetch tests. Please ensure the backend is running and you are logged in.');
+      setError('Failed to fetch tests. Please ensure the backend is running.');
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
-
+    // Dependencies: The function only changes if these change
+  }, [teacherId, token, API_BASE_URL]); 
+  
+  useEffect(() => {
+    fetchTeacherTests();
+  }, [fetchTeacherTests]); // Now safely included
   // ✅ /results is ONLY called here — when the teacher explicitly clicks "View Results".
   // This is the only place plagiarism detection may be triggered.
   const fetchTestResults = async (testId) => {

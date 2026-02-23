@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';   // ✅ ADDED
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -8,7 +9,6 @@ import Sidebar from './components/Sidebar';
 import HomePage from './components/HomePage';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
-import CodeEditor from './components/CodeEditor';
 import CreateTest from './components/CreateTest';
 import ViewTests from './components/ViewTests'; 
 import SettingsPage from './components/SettingsPage';
@@ -27,7 +27,6 @@ function AppContent() {
   const location = useLocation();
 
   const handleNavigate = (path, state = null) => {
-    // Ensure path starts with /
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     navigate(normalizedPath, { state });
     setIsSidebarOpen(false);
@@ -35,15 +34,20 @@ function AppContent() {
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
-  // Pages where Navbar + Sidebar should be hidden
-  const isEditorPage = location.pathname === '/editor';
   const isDeviceCheck = location.pathname === '/device-check';
   const isStudentTestEditor = location.pathname === '/studenttesteditor';
   const isTestComplete = location.pathname === '/test-complete';
   const isTestPage = location.pathname.startsWith('/test/');
   const isStudentPage = location.pathname.startsWith('/student/');
-  const isThankYou=location.pathname.startsWith('/thank-you');
-  const hideLayout = isEditorPage || isDeviceCheck || isStudentTestEditor || isTestComplete || isThankYou || isTestPage || isStudentPage;
+  const isThankYou = location.pathname.startsWith('/thank-you');
+
+  const hideLayout =
+    isDeviceCheck ||
+    isStudentTestEditor ||
+    isTestComplete ||
+    isThankYou ||
+    isTestPage ||
+    isStudentPage;
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors relative">
@@ -76,16 +80,9 @@ function AppContent() {
             <Route path="/studenttesteditor" element={<StudentTestEditor />} />
             <Route path="/test-complete" element={<TestComplete />} />
             <Route path="/thank-you" element={<ThankYou />} />
-            <Route path="/plagiarism" element={<TeacherPlagiarismPage />} />            
+            <Route path="/plagiarism" element={<TeacherPlagiarismPage />} />
+
             {/* Protected Routes */}
-            <Route 
-              path="/editor" 
-              element={
-                <ProtectedRoute>
-                  <CodeEditor onNavigate={handleNavigate} />
-                </ProtectedRoute>
-              } 
-            />
             <Route 
               path="/create-test" 
               element={
@@ -179,7 +176,6 @@ function AppContent() {
               } 
             />
 
-            {/* Catch-all route */}
             <Route path="*" element={<HomePage onNavigate={handleNavigate} />} />
           </Routes>
         </main>
@@ -190,13 +186,15 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <Router>
-          <AppContent />
-        </Router>
-      </AuthProvider>
-    </ThemeProvider>
+    <GoogleOAuthProvider clientId="802499887610-ol00ce11g05nemqo386b5vsutufe1q2m.apps.googleusercontent.com"> {/* ✅ ADD YOUR CLIENT ID */}
+      <ThemeProvider>
+        <AuthProvider>
+          <Router>
+            <AppContent />
+          </Router>
+        </AuthProvider>
+      </ThemeProvider>
+    </GoogleOAuthProvider>
   );
 }
 

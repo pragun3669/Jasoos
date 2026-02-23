@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from "react-router-dom";
+import { AI_SERVICE_URL } from "../config";
 import { 
   Camera, 
   Mic, 
@@ -57,7 +58,7 @@ const DeviceCheck = ({ onProceed, onBack }) => {
     { key: 'tabSwitching', title: 'Tab Monitoring', icon: Eye }
   ];
 
-  const PROCTORING_BACKEND =  "http://localhost:8000/proctoring";
+  const PROCTORING_BACKEND =  `${AI_SERVICE_URL}/proctoring`;
 
   const updateCheck = useCallback((key, status, message) => {
     setChecks(prev => ({
@@ -562,18 +563,7 @@ const DeviceCheck = ({ onProceed, onBack }) => {
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'success':
-        return 'border-green-200 bg-green-50';
-      case 'error':
-        return 'border-red-200 bg-red-50';
-      case 'warning':
-        return 'border-yellow-200 bg-yellow-50';
-      default:
-        return 'border-blue-200 bg-blue-50';
-    }
-  };
+ 
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">

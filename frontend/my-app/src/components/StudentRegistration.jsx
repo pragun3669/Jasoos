@@ -3,7 +3,7 @@ import {
   User, Mail, Phone, Users, ArrowRight, Shield, Clock, AlertCircle, CheckCircle
 } from 'lucide-react';
 import axios from 'axios';
-
+import { API_URL } from "../config";
 const StudentRegistration = ({ test, onSubmit, token }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -55,7 +55,7 @@ const StudentRegistration = ({ test, onSubmit, token }) => {
         batch: formData.batch
       };
 
-      await axios.post(`http://localhost:8081/api/tests/link/${token}/submit`, payload);
+      await axios.post(`${API_URL}/api/tests/link/${token}/submit`, payload);
 
       if (onSubmit) onSubmit(payload); // optional parent callback
       alert('Registration successful! You can now start the assessment.');

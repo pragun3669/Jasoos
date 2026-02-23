@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, ArrowLeft, Shield } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-
+import { GoogleLogin } from '@react-oauth/google'; // ✅ ADDED
+import { API_URL } from "../config";
 const LoginPage = ({ onNavigate }) => {
   const { login } = useAuth();
   const [formData, setFormData] = useState({ username: '', password: '' });
@@ -38,18 +39,12 @@ const LoginPage = ({ onNavigate }) => {
     setSuccess(false);
 
     try {
-      const res = await axios.post('http://localhost:8081/api/auth/login', formData);
+      const res = await axios.post(`${API_URL}/api/auth/login`, formData);
 
-      
       if (res.data.success && res.data.user.token) {
-
-        // Update AuthContext with user info
         login(res.data.user, res.data.user.token);
-
         setMessage('Login successful!');
         setSuccess(true);
-
-        // Navigate to home/dashboard
         onNavigate('home');
       } else {
         setMessage(res.data.message || 'Invalid username or password');
@@ -62,10 +57,33 @@ const LoginPage = ({ onNavigate }) => {
     }
   };
 
+  // ✅ GOOGLE LOGIN HANDLER (ADDED)
+  const handleGoogleSuccess = async (credentialResponse) => {
+    console.log("GOOGLE SUCCESS", credentialResponse);
+  
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/auth/google`,
+        { token: credentialResponse.credential }
+      );
+  
+      console.log("BACKEND RESPONSE:", res.data);
+  
+      if (res.data.success && res.data.user?.token) {
+        login(res.data.user, res.data.user.token);
+        onNavigate("home");
+      } else {
+        setMessage("Google authentication failed");
+      }
+    } catch (err) {
+      console.error("Google login error:", err);
+      setMessage("Google login failed!");
+    }
+  };
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-black flex items-center justify-center px-4">
       <div className="max-w-md w-full">
-        {/* Back Button */}
         <button
           type="button"
           onClick={() => onNavigate('home')}
@@ -75,7 +93,6 @@ const LoginPage = ({ onNavigate }) => {
           Back to Home
         </button>
 
-        {/* Login Card */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
           <div className="text-center mb-8">
             <div className="bg-gradient-to-br from-green-400 to-blue-500 p-3 rounded-xl w-fit mx-auto mb-4">
@@ -90,7 +107,6 @@ const LoginPage = ({ onNavigate }) => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Username */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Username
@@ -115,7 +131,6 @@ const LoginPage = ({ onNavigate }) => {
               )}
             </div>
 
-            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Password
@@ -164,6 +179,15 @@ const LoginPage = ({ onNavigate }) => {
               {isLoading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
+
+          {/* ✅ GOOGLE LOGIN SECTION ADDED BELOW */}
+          <div className="mt-6 flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              
+              onError={() => setMessage('Google Login Failed')}
+            />
+          </div>
 
           <div className="mt-8 text-center">
             <p className="text-gray-600 dark:text-gray-400">

@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
-
+import { API_URL } from "../config";
 import {
   Search,
-  CheckCircle,
   Users,
   FileText,
   ArrowLeft,
@@ -19,7 +18,6 @@ import {
   AlertTriangle,
   Shield,
   Filter,
-  Download,
   Eye,
   BarChart3,
   Zap
@@ -42,12 +40,9 @@ const TeacherPlagiarismPage = () => {
   const [sortBy, setSortBy] = useState("name");
   const [animateCards, setAnimateCards] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  
+  const API_BASE_URL = `${API_URL}/api`;
 
-  const API_BASE_URL = "http://localhost:8081/api";
-
-  useEffect(() => {
-    if (teacherId && token) fetchTests();
-  }, [teacherId, token]);
 
   useEffect(() => {
     setAnimateCards(true);
@@ -55,46 +50,65 @@ const TeacherPlagiarismPage = () => {
     return () => clearTimeout(timer);
   }, [tests]);
 
-  const fetchTests = async () => {
-    try {
-      setLoading(true);
+ // 1. Move it ABOVE the useEffect and wrap in useCallback
+const fetchTests = useCallback(async () => {
+  try {
+    setLoading(true);
+    const res = await fetch(`${API_BASE_URL}/tests/teacher/${teacherId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-      const res = await fetch(`${API_BASE_URL}/tests/teacher/${teacherId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    if (!res.ok) throw new Error("Failed to load tests");
 
-      if (!res.ok) throw new Error("Failed to load tests");
+    const data = await res.json();
+    setTests(data);
+  } catch (e) {
+    setError("Failed to fetch tests");
+  } finally {
+    setLoading(false);
+  }
+  // This function now only "changes" if teacherId, token, or API_BASE_URL change
+}, [teacherId, token, API_BASE_URL]); 
 
-      const data = await res.json();
-      setTests(data);
+// 2. Now call it inside useEffect
+useEffect(() => {
+  if (teacherId && token) {
+    fetchTests();
+  }
+}, [teacherId, token, fetchTests]); // Use fetchTests as the dependency here
 
-    } catch (e) {
-      setError("Failed to fetch tests");
-    } finally {
-      setLoading(false);
-    }
-  };
+const fetchPlagiarismData = async (testId) => {
+  try {
+    setResultsLoading(true);
+    setError(null);
 
-  const fetchPlagiarismData = async (testId) => {
-    try {
-      setResultsLoading(true);
+    const res = await fetch(
+      `${API_BASE_URL}/plagiarism/test/${testId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
 
-      const res = await fetch(`${API_BASE_URL}/tests/${testId}/results`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    if (!res.ok) throw new Error("Error fetching plagiarism results");
 
-      if (!res.ok) throw new Error("Error fetching results");
+    const data = await res.json();
 
-      const data = await res.json();
-      setStudents(data);
-      setShowStats(true);
+    // 🔥 IMPORTANT: backend already returns full StudentResultDTO list
+    // So DO NOT reshape. Just set directly.
+    setStudents(data);
 
-    } catch (e) {
-      setError("Failed to fetch results");
-    } finally {
-      setResultsLoading(false);
-    }
-  };
+    setShowStats(true);
+
+  } catch (e) {
+    console.error(e);
+    setError("Failed to fetch plagiarism results");
+  } finally {
+    setResultsLoading(false);
+  }
+};
 
   // AI Risk Badge with animation
   const getBadge = (score) => {
@@ -179,13 +193,7 @@ const TeacherPlagiarismPage = () => {
 
   const filteredStudents = getFilteredAndSortedStudents();
 
-  // Get risk level for student
-  const getStudentRiskLevel = (student) => {
-    const maxScore = Math.max(...(student.questionResults || []).map(q => q.plagiarismScore || 0));
-    if (maxScore >= 90) return "high";
-    if (maxScore >= 60) return "moderate";
-    return "low";
-  };
+  
 
   if (!user) {
     return (
@@ -443,7 +451,6 @@ const TeacherPlagiarismPage = () => {
 
                   <tbody>
                     {filteredStudents.map((stu, idx) => {
-                      const riskLevel = getStudentRiskLevel(stu);
                       const maxScore = Math.max(...(stu.questionResults || []).map(q => q.plagiarismScore || 0));
                       const riskBadge = getBadge(maxScore);
 
@@ -589,7 +596,7 @@ const TeacherPlagiarismPage = () => {
       </div>
 
       {/* CSS Animations */}
-      <style jsx>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }

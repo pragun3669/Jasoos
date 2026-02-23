@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   Eye,
-  Edit,
   Trash2,
   Plus,
   Search,
-  Calendar,
   Users,
   Clock,
   MoreHorizontal,
@@ -14,8 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import TestPreviewModal from './TestPreviewModal';
-import CodeEditor from './CodeEditor';
-
+import { API_URL } from "../config";
 const ViewTests = ({ onNavigate }) => {
   const { user } = useAuth();
   const token = user?.token;
@@ -25,14 +22,13 @@ const ViewTests = ({ onNavigate }) => {
   const [selectedTest, setSelectedTest] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [openEditorTest, setOpenEditorTest] = useState(null);
 
   useEffect(() => {
     const fetchTests = async () => {
       if (!user || !token) return;
       try {
         const res = await fetch(
-          `http://localhost:8081/api/tests/teacher/${user.id}`,
+          `${API_URL}/api/tests/teacher/${user.id}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) throw new Error('Failed to fetch tests');
@@ -72,7 +68,7 @@ const ViewTests = ({ onNavigate }) => {
     if (!window.confirm("Are you sure you want to delete this test?")) return;
   
     try {
-      const res = await fetch(`http://localhost:8081/api/tests/${testId}`, {
+      const res = await fetch(`${API_URL}/api/tests/${testId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -89,7 +85,7 @@ const ViewTests = ({ onNavigate }) => {
 
   const handleStartTest = async (testId) => {
     try {
-      const res = await fetch(`http://localhost:8081/api/tests/${testId}/start`, {
+      const res = await fetch(`${API_URL}/api/tests/${testId}/start`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -111,7 +107,7 @@ const ViewTests = ({ onNavigate }) => {
     if (!window.confirm("Are you sure you want to stop this test? Students will no longer be able to access it.")) return;
 
     try {
-      const res = await fetch(`http://localhost:8081/api/tests/${testId}/stop`, {
+      const res = await fetch(`${API_URL}/api/tests/${testId}/stop`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -153,16 +149,12 @@ const ViewTests = ({ onNavigate }) => {
     return colors[index % colors.length];
   };
 
-  const openEditor = (test) => {
-    setOpenEditorTest(test);
-  };
-
   const handleCreateLink = async (test) => {
     if (!test || !test.id) return;
   
     try {
       const res = await fetch(
-        `http://localhost:8081/api/tests/${test.id}/generate-link`,
+        `${API_URL}/api/tests/${test.id}/generate-link`,
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` }
@@ -188,15 +180,6 @@ const ViewTests = ({ onNavigate }) => {
           <p className="text-xl font-semibold text-gray-900 dark:text-white">Loading tests...</p>
         </div>
       </div>
-    );
-  }
-
-  if (openEditorTest) {
-    return (
-      <CodeEditor
-        test={openEditorTest}
-        onClose={() => setOpenEditorTest(null)}
-      />
     );
   }
 
@@ -367,7 +350,6 @@ const ViewTests = ({ onNavigate }) => {
           <TestPreviewModal
             test={selectedTest}
             onClose={() => setSelectedTest(null)}
-            onOpenEditor={openEditor}
           />
         )}
       </div>

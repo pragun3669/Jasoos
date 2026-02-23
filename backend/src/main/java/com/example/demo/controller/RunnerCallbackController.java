@@ -17,7 +17,17 @@ public class RunnerCallbackController {
 
     @PostMapping("/callback")
     public ResponseEntity<String> handleCallback(@RequestBody RunnerResultDTO dto) {
-        submissionService.handleRunnerCallback(dto);
-        return ResponseEntity.ok("Updated submission " + dto.getSubmissionId());
+
+        if (dto == null || dto.getSubmissionId() == null) {
+            return ResponseEntity.badRequest().body("Invalid runner payload");
+        }
+
+        try {
+            submissionService.handleRunnerCallback(dto);
+            return ResponseEntity.ok("Submission " + dto.getSubmissionId() + " updated successfully");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Error updating submission: " + e.getMessage());
+        }
     }
 }

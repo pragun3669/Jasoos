@@ -340,7 +340,7 @@ const HomePage = ({ onNavigate }) => {
         </div>
       </footer>
 
-      <style jsx>{`
+      <style>{`
         @keyframes fade-in-up {
           from {
             opacity: 0;
