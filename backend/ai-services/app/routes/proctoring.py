@@ -1,12 +1,10 @@
 from fastapi import APIRouter, Request
-
 from app.services.proctoring import videoproctoring
 
 router = APIRouter(
     prefix="/proctoring",
     tags=["Proctoring"]
 )
-
 
 # -------------------------------
 # Guidelines
@@ -18,6 +16,7 @@ def get_guidelines():
 
 # -------------------------------
 # Reference Frame
+# (Now expects JSON landmarks data from frontend)
 # -------------------------------
 @router.post("/reference-frame")
 async def reference_frame(request: Request):
@@ -43,6 +42,7 @@ def stop_proctoring():
 
 # -------------------------------
 # Process Frame
+# (Now receives processed analysis JSON from frontend)
 # -------------------------------
 @router.post("/process-frame")
 async def process_frame(request: Request):
@@ -65,5 +65,6 @@ def run_check():
 def health():
     return {
         "status": "ok",
-        "service": "proctoring"
+        "service": "proctoring",
+        "mode": "client-side-ai"
     }
