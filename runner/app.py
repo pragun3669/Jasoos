@@ -1,153 +1,40 @@
 from flask import Flask, request, jsonify
-import threading, subprocess, os, tempfile, requests, shutil, time
+import threading
+import subprocess
+import os
+import tempfile
+import requests
+import shutil
+import time
 
 app = Flask(__name__)
-BACKEND_CALLBACK_URL = "http://host.docker.internal:8081/api/internal/runner/callback"
-MAX_COMPILE_OUTPUT = 2000  # limit compile output length
+
+# 🔁 IMPORTANT: Change this after deployment to your Railway backend URL
+BACKEND_CALLBACK_URL = os.environ.get(
+    "BACKEND_CALLBACK_URL",
+    "https://jasoos-production.up.railway.app/api/internal/runner/callback"
+)
+
+MAX_COMPILE_OUTPUT = 2000  # limit compile error size
 
 
+# ================= CALLBACK =================
 def send_callback(result_payload):
     try:
-        r = requests.post(BACKEND_CALLBACK_URL, json=result_payload)
-        print("✅ Callback sent, backend replied:", r.status_code, r.text)
+        r = requests.post(BACKEND_CALLBACK_URL, json=result_payload, timeout=5)
+        print("✅ Callback sent:", r.status_code)
     except Exception as e:
-        print("❌ Error calling backend callback:", e)
+        print("❌ Callback failed:", e)
 
 
+# ================= SAFE INPUT =================
 def safe_input(data):
-    """Ensure input always ends with newline (important for Scanner/cin/input())"""
     if data is None:
         return "\n"
     return data if data.endswith("\n") else data + "\n"
 
 
-def run_code(job):
-    submission_id = job.get("submissionId")
-    language = job.get("language", "").lower()
-    source = job.get("source", "")
-    test_cases = job.get("testCases", [])
-    filename = job.get("filename")
-    time_limit = float(job.get("timeLimitSec", 2))
-
-    status = "COMPLETED"
-    compile_output = ""
-    results = []
-    result_payload = {}
-
-    workdir = tempfile.mkdtemp(prefix="runner_")
-
-    try:
-        # ================= JAVA =================
-        if language == "java":
-            filename = filename or "Main.java"
-            filepath = os.path.join(workdir, filename)
-
-            with open(filepath, "w") as f:
-                f.write(source)
-
-            compile_proc = subprocess.run(
-                ["javac", filepath],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            if compile_proc.returncode != 0:
-                status = "CE"
-                compile_output = compile_proc.stderr[:MAX_COMPILE_OUTPUT]
-            else:
-                class_name = filename.replace(".java", "")
-
-                for tc in test_cases:
-                    results.append(
-                        execute_program(
-                            ["java", "-cp", workdir, class_name],
-                            workdir,
-                            tc,
-                            time_limit
-                        )
-                    )
-
-        # ================= PYTHON =================
-        elif language == "python":
-            filename = filename or "main.py"
-            filepath = os.path.join(workdir, filename)
-
-            with open(filepath, "w") as f:
-                f.write(source)
-
-            compile_proc = subprocess.run(
-                ["python3", "-m", "py_compile", filepath],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            if compile_proc.returncode != 0:
-                status = "CE"
-                compile_output = compile_proc.stderr[:MAX_COMPILE_OUTPUT]
-            else:
-                for tc in test_cases:
-                    results.append(
-                        execute_program(
-                            ["python3", filepath],
-                            workdir,
-                            tc,
-                            time_limit
-                        )
-                    )
-
-        # ================= C++ =================
-        elif language == "cpp":
-            filename = filename or "main.cpp"
-            filepath = os.path.join(workdir, filename)
-            exe_file = os.path.join(workdir, "a.out")
-
-            with open(filepath, "w") as f:
-                f.write(source)
-
-            compile_proc = subprocess.run(
-                ["g++", filepath, "-O2", "-o", exe_file],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            if compile_proc.returncode != 0:
-                status = "CE"
-                compile_output = compile_proc.stderr[:MAX_COMPILE_OUTPUT]
-            else:
-                for tc in test_cases:
-                    results.append(
-                        execute_program(
-                            [exe_file],
-                            workdir,
-                            tc,
-                            time_limit
-                        )
-                    )
-
-        else:
-            status = "FAILED"
-            compile_output = f"Unsupported language: {language}"
-
-        result_payload = {
-            "submissionId": submission_id,
-            "status": status,
-            "compileOutput": compile_output,
-            "score": 0,
-            "results": results
-        }
-
-    finally:
-        if result_payload:
-            send_callback(result_payload)
-        shutil.rmtree(workdir, ignore_errors=True)
-
-
+# ================= EXECUTE PROGRAM =================
 def execute_program(command, workdir, test_case, time_limit):
     tc_id = test_case.get("testCaseId")
     input_data = safe_input(test_case.get("inputData", ""))
@@ -159,20 +46,27 @@ def execute_program(command, workdir, test_case, time_limit):
             command,
             cwd=workdir,
             input=input_data,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             timeout=time_limit
         )
 
         elapsed = int((time.perf_counter() - start) * 1000)
 
-        stdout = proc.stdout.strip()
-        stderr = proc.stderr
-
         if proc.returncode != 0:
             result_status = "RTE"
         else:
             result_status = "AC"
+
+        return {
+            "testCaseId": tc_id,
+            "status": result_status,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr,
+            "execTimeMs": elapsed,
+            "memoryKb": 0
+        }
 
     except subprocess.TimeoutExpired:
         return {
@@ -184,25 +78,97 @@ def execute_program(command, workdir, test_case, time_limit):
             "memoryKb": 0
         }
 
-    return {
-        "testCaseId": tc_id,
-        "status": result_status,
-        "stdout": stdout,
-        "stderr": stderr,
-        "execTimeMs": elapsed,
-        "memoryKb": 0
-    }
+
+# ================= MAIN RUNNER =================
+def run_code(job):
+    submission_id = job.get("submissionId")
+    source = job.get("source", "")
+    test_cases = job.get("testCases", [])
+    filename = job.get("filename") or "main.cpp"
+    time_limit = float(job.get("timeLimitSec", 2))
+
+    status = "COMPLETED"
+    compile_output = ""
+    results = []
+
+    workdir = tempfile.mkdtemp(prefix="runner_")
+
+    try:
+        filepath = os.path.join(workdir, filename)
+        exe_file = os.path.join(workdir, "a.out")
+
+        # Write source file
+        with open(filepath, "w") as f:
+            f.write(source)
+
+        # 🚀 FAST COMPILE FLAGS
+        compile_proc = subprocess.run(
+            [
+                "g++",
+                filepath,
+                "-O2",
+                "-std=c++17",
+                "-pipe",
+                "-s",
+                "-o",
+                exe_file
+            ],
+            cwd=workdir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10
+        )
+
+        if compile_proc.returncode != 0:
+            status = "CE"
+            compile_output = compile_proc.stderr[:MAX_COMPILE_OUTPUT]
+
+        else:
+            for tc in test_cases:
+                results.append(
+                    execute_program(
+                        [exe_file],
+                        workdir,
+                        tc,
+                        time_limit
+                    )
+                )
+
+        result_payload = {
+            "submissionId": submission_id,
+            "status": status,
+            "compileOutput": compile_output,
+            "score": 0,
+            "results": results
+        }
+
+    except Exception as e:
+        result_payload = {
+            "submissionId": submission_id,
+            "status": "FAILED",
+            "compileOutput": str(e),
+            "score": 0,
+            "results": []
+        }
+
+    finally:
+        send_callback(result_payload)
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
+# ================= ROUTE =================
 @app.route("/run", methods=["POST"])
 def run_job():
     job = request.json or {}
-    threading.Thread(target=run_code, args=(job,)).start()
+    threading.Thread(target=run_code, args=(job,), daemon=True).start()
     return jsonify({
         "message": "Job accepted",
         "submissionId": job.get("submissionId")
     }), 202
 
 
+# ================= START SERVER =================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))  # ✅ Required for Render
+    app.run(host="0.0.0.0", port=port)
