@@ -4,7 +4,7 @@ import pickle
 # -------------------------------
 # IMPORT FEATURE MODULES (relative imports)
 # -------------------------------
-from .codebert_embeddings import CodeBERTEmbeddingExtractor
+#from .codebert_embeddings import CodeBERTEmbeddingExtractor
 from .ast_feature_extractor import ASTFeatureExtractor
 from .similarity_feature_extractor import SimilarityFeatureExtractor
 from .normalization import normalize_code
@@ -17,9 +17,7 @@ MODEL_PATH = "app/services/plagiarism/best_model_xgboost.pkl"
 # -------------------------------
 # LOAD FEATURE EXTRACTORS ONCE
 # -------------------------------
-print("🔄 Loading CodeBERT model…")
-codebert = CodeBERTEmbeddingExtractor()
-print("✅ CodeBERT ready!")
+codebert = None
 
 ast_extractor = ASTFeatureExtractor()
 sim_extractor = SimilarityFeatureExtractor()
@@ -89,7 +87,7 @@ def extract_all_features(codeA: str, codeB: str):
 # MAIN PREDICTION FUNCTION
 # -------------------------------
 def predict_plagiarism(codeA: str, codeB: str) -> float:
-
+    return 0.0
     if MODEL is None:
         load_model()
 
