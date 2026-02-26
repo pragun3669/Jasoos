@@ -19,14 +19,14 @@ public class SubmissionResult {
     private Long testCaseId;
     private String status; // AC, WA, TLE, RTE, CE
 
-    @Lob
+    
     @Column(columnDefinition = "TEXT")
     private String stdout;
 
-    @Lob
+    
     @Column(columnDefinition = "TEXT")
     private String stderr;
-    @Lob
+    
 @Column(columnDefinition = "TEXT")
 private String inputData;
 

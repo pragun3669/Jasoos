@@ -46,17 +46,17 @@ public class Submission {
     private String language;
     private String filename;
 
-    @Lob
+    
     @Column(columnDefinition = "TEXT")
     private String source;
 
-    @Lob
+    
     @Column(columnDefinition = "TEXT")
     private String stdin;
 
     private String status;
 
-    @Lob
+    
     @Column(name = "compile_output", columnDefinition = "TEXT")
     private String compileOutput;
 

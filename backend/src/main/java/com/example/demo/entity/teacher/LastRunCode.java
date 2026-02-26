@@ -31,7 +31,7 @@ public class LastRunCode {
 
     private String language;
 
-    @Lob
+    
     @Column(columnDefinition = "TEXT")
     private String code;
 
