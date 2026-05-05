@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   MessageCircle,
   ArrowLeft,
-  Github,
   Mail,
   FileText,
   Cpu
@@ -20,7 +19,7 @@ const HelpPage = ({ onNavigate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedFaq, setExpandedFaq] = useState(null);
 
-  const faqData = [
+  const faqData = useMemo(() => [
     {
       category: 'Getting Started',
       icon: Shield,
@@ -183,7 +182,7 @@ const HelpPage = ({ onNavigate }) => {
         }
       ]
     }
-  ];
+  ], []);
 
   const colorMap = {
     emerald: { tag: 'text-emerald-400 bg-emerald-400/10', icon: 'bg-emerald-500/10 text-emerald-400', border: 'border-emerald-500/20', accent: 'border-l-emerald-500' },
@@ -204,7 +203,7 @@ const HelpPage = ({ onNavigate }) => {
         )
       }))
       .filter(cat => cat.questions.length > 0),
-    [searchTerm]
+    [searchTerm, faqData]
   );
 
   const totalQuestions = faqData.reduce((acc, c) => acc + c.questions.length, 0);
@@ -277,7 +276,6 @@ const HelpPage = ({ onNavigate }) => {
         {!searchTerm && (
           <div className="grid sm:grid-cols-3 gap-4">
             {[
-              { icon: Github,      label: 'View Source',    sub: 'Explore the codebase on GitHub',           href: '#' },
               { icon: FileText,    label: 'Documentation',  sub: 'Architecture, API reference, and setup',   href: '#' },
               { icon: MessageCircle, label: 'Report a Bug', sub: 'Open an issue on the GitHub repository',   href: '#' },
             ].map((item, i) => {
@@ -379,13 +377,7 @@ const HelpPage = ({ onNavigate }) => {
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 flex-shrink-0">
-              <a href="#"
-                className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/8 border border-white/8
-                  hover:border-white/14 rounded-xl text-sm text-gray-300 hover:text-white transition-all font-medium">
-                <Github className="w-4 h-4" />
-                Open Issue
-              </a>
-              <a href="mailto:support@jasoos.ai"
+              <a href="mailto:pragun2424@gmail.com"
                 className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400
                   rounded-xl text-sm text-white transition-all font-semibold hover:shadow-lg hover:shadow-emerald-500/25">
                 <Mail className="w-4 h-4" />

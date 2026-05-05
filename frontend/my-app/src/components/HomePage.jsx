@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Code, Play, Users, BarChart3, Zap,
-  CheckCircle, ArrowRight, Globe, Layers, Menu, X,
-  ChevronDown, Lock, Cpu, Camera, Brain, FileText,
-  Headphones, Mail, Twitter, Linkedin, Github, Monitor
+  CheckCircle, ArrowRight, Menu, X,
+  ChevronDown, Lock, Camera, Brain, FileText,
+   Mail, Monitor
 } from 'lucide-react';
 
 // ── Intersection Observer hook ─────────────────────────────────────────────────
@@ -336,7 +336,7 @@ const HomePage = ({ onNavigate }) => {
 
                   {/* Code snippet */}
                   <div className="bg-gray-950 rounded-lg p-4 font-mono text-xs leading-relaxed">
-                    <div className="text-gray-600 mb-1.5">// Q2 — Two Sum (C++)</div>
+                    <div className="text-gray-600 mb-1.5"> Q2 — Two Sum (C++)</div>
                     <div>
                       <span className="text-blue-400">vector</span>
                       <span className="text-white">&lt;</span>
@@ -357,7 +357,7 @@ const HomePage = ({ onNavigate }) => {
                       <span className="text-blue-400">int</span>
                       <span className="text-white">&gt; mp;</span>
                     </div>
-                    <div className="ml-4 text-gray-600">// ... 4 / 5 test cases passing</div>
+                    <div className="ml-4 text-gray-600">... 4 / 5 test cases passing</div>
                     <div className="text-white">{'}'}</div>
                   </div>
                 </div>
@@ -505,14 +505,7 @@ const HomePage = ({ onNavigate }) => {
           </div>
 
           {/* GitHub CTA */}
-          <div className="mt-12 text-center">
-            <a href="#"
-              className="inline-flex items-center gap-2.5 px-6 py-3 border border-white/10 hover:border-white/20 rounded-xl text-sm text-gray-300 hover:text-white transition-all hover:bg-white/5 font-medium">
-              <Github className="w-4 h-4" />
-              View Source on GitHub
-              <ArrowRight className="w-3.5 h-3.5" />
-            </a>
-          </div>
+          
         </div>
       </section>
 
@@ -558,9 +551,7 @@ const HomePage = ({ onNavigate }) => {
               </p>
               <div className="space-y-5">
                 {[
-                  { icon: Mail,      label: 'Email',   val: 'hello@jasoos.ai' },
-                  { icon: Headphones, label: 'Support', val: 'support@jasoos.ai' },
-                  { icon: Github,    label: 'GitHub',  val: 'github.com/your-repo' },
+                  { icon: Mail,      label: 'Email',   val: 'pragun2424@gmail.com' },
                 ].map(c => {
                   const Icon = c.icon;
                   return (
@@ -656,13 +647,6 @@ const HomePage = ({ onNavigate }) => {
               <p className="text-gray-700 text-xs mb-6">
                 Built with Spring Boot · React · MediaPipe · Docker
               </p>
-              <div className="flex gap-3">
-                {[Twitter, Linkedin, Github].map((Icon, i) => (
-                  <a key={i} href="#" className="w-9 h-9 rounded-lg bg-white/4 hover:bg-white/8 border border-white/5 hover:border-white/10 flex items-center justify-center transition-all">
-                    <Icon className="w-4 h-4 text-gray-500 hover:text-white transition-colors" />
-                  </a>
-                ))}
-              </div>
             </div>
 
             {[
@@ -674,7 +658,7 @@ const HomePage = ({ onNavigate }) => {
                 <ul className="space-y-3">
                   {col.links.map(link => (
                     <li key={link}>
-                      <a href="#" className="text-gray-600 hover:text-white text-sm transition-colors font-light">{link}</a>
+                     <button type="button" className="text-gray-600 hover:text-white text-sm transition-colors font-light">{link}</button> 
                     </li>
                   ))}
                 </ul>
@@ -687,8 +671,8 @@ const HomePage = ({ onNavigate }) => {
               © 2025 Jasoos AI — Final Year B.Tech Project. All rights reserved.
             </p>
             <div className="flex items-center gap-5 text-xs text-gray-700">
-              <a href="#" className="hover:text-white transition-colors">Privacy</a>
-              <a href="#" className="hover:text-white transition-colors">Terms</a>
+            <button type="button" className="hover:text-white transition-colors">Privacy</button>
+            <button type="button" className="hover:text-white transition-colors">Terms</button>
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
                 All systems operational
