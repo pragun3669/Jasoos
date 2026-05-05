@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  X, FileText, BarChart3, Settings, HelpCircle, Code, Shield
+  X, FileText, BarChart3, Settings, HelpCircle, Code, Shield, Eye
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,28 +11,37 @@ export default function Sidebar({ isOpen = false, onClose = () => {}, onNavigate
     {
       category: 'Test Management',
       items: [
-        { icon: Code, label: 'Create Test', path: '/create-test', color: 'text-green-400', auth: true },
-        { icon: FileText, label: 'View Tests', path: '/view-tests', color: 'text-blue-400', auth: true }
-      ]
+        { icon: Code,     label: 'Create Test',        path: '/create-test', color: 'emerald', auth: true  },
+        { icon: FileText, label: 'View Tests',          path: '/view-tests',  color: 'blue',    auth: true  },
+      ],
     },
     {
       category: 'Analytics & Results',
       items: [
-        { icon: BarChart3, label: 'Test Results', path: '/test-results', color: 'text-cyan-400', auth: true },
-        { icon: Shield, label: 'Plagiarism Checker', path: '/plagiarism', color: 'text-red-400', auth: true } // ✅ Added
-      ]
+        { icon: BarChart3, label: 'Test Results',       path: '/test-results', color: 'cyan',   auth: true  },
+        { icon: Shield,    label: 'Plagiarism Checker', path: '/plagiarism',   color: 'rose',   auth: true  },
+      ],
     },
     {
       category: 'System',
       items: [
-        { icon: Settings, label: 'Settings', path: '/settings', color: 'text-gray-400', auth: false },
-        { icon: HelpCircle, label: 'Help & Support', path: '/help', color: 'text-teal-400', auth: false }
-      ]
-    }
+        { icon: Settings,   label: 'Settings',     path: '/settings', color: 'gray', auth: false },
+        { icon: HelpCircle, label: 'Help & Support', path: '/help',    color: 'teal', auth: false },
+      ],
+    },
   ];
 
+  // Tailwind-safe colour map (avoids dynamic class generation issues)
+  const colorMap = {
+    emerald: { bg: 'bg-emerald-500/10', icon: 'text-emerald-400', hover: 'group-hover:bg-emerald-500/20' },
+    blue:    { bg: 'bg-blue-500/10',    icon: 'text-blue-400',    hover: 'group-hover:bg-blue-500/20'    },
+    cyan:    { bg: 'bg-cyan-500/10',    icon: 'text-cyan-400',    hover: 'group-hover:bg-cyan-500/20'    },
+    rose:    { bg: 'bg-rose-500/10',    icon: 'text-rose-400',    hover: 'group-hover:bg-rose-500/20'    },
+    gray:    { bg: 'bg-gray-500/10',    icon: 'text-gray-400',    hover: 'group-hover:bg-gray-500/20'    },
+    teal:    { bg: 'bg-teal-500/10',    icon: 'text-teal-400',    hover: 'group-hover:bg-teal-500/20'    },
+  };
+
   const handleItemClick = (path) => {
-    console.log(`Navigating to: ${path}`);
     onNavigate(path);
     onClose();
   };
@@ -41,112 +50,97 @@ export default function Sidebar({ isOpen = false, onClose = () => {}, onNavigate
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity duration-300 ${
-          isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'
+        className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${
+          isOpen ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'
         }`}
         onClick={onClose}
       />
 
-      {/* Sidebar */}
+      {/* Sidebar panel */}
       <div
-        className={`fixed left-0 top-0 w-full max-w-xs h-screen bg-white/95 dark:bg-gray-900/95 backdrop-blur-md
-          border-r border-gray-200 dark:border-gray-800 z-50 transform transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col
-        `}
+        className={`fixed left-0 top-0 w-72 h-screen bg-gray-950 border-r border-white/8
+          z-50 transform transition-transform duration-300 ease-in-out flex flex-col
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        {/* Header - Fixed */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
-          <div className="flex items-center">
-            <div className="h-8 w-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg mr-3 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">J</span>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-5 border-b border-white/8 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-500/20">
+              <Eye className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
-                Dashboard
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Teacher Panel</p>
+              <p className="text-sm font-bold text-white tracking-tight" style={{ fontFamily: "'Syne', sans-serif" }}>
+                JASOOS<span className="text-emerald-400">.</span>AI
+              </p>
+              <p className="text-[11px] text-gray-500 font-medium">Educator Dashboard</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-            <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-white/6 transition-colors text-gray-500 hover:text-white"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Navigation - Scrollable */}
-        <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
-          <nav className="space-y-6">
-            {menuItems.map((category, idx) => (
-              <div key={idx}>
-                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
-                  {category.category}
-                </h3>
-                <div className="space-y-1">
-                  {category.items.map((item, i) => {
-                    // Show item only if auth=true and user exists
-                    if (item.auth && !user) return null;
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => handleItemClick(item.path)}
-                        className="flex w-full items-center px-3 py-3 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 group"
-                      >
-                        <div className={`p-2 rounded-lg ${item.color} bg-opacity-10 mr-3 group-hover:scale-110 transition-transform`}>
-                          <Icon className={`w-4 h-4 ${item.color}`} />
-                        </div>
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+        {/* User pill */}
+        {user && (
+          <div className="mx-4 mt-4 px-4 py-3 rounded-xl bg-white/4 border border-white/6 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {(user.name || user.email || 'E')[0].toUpperCase()}
               </div>
-            ))}
-
-            {/* Quick Stats */}
-            <div className="pt-4">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
-                Quick Stats
-              </h3>
-              <div className="space-y-2 px-3">
-                <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 p-3 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-green-800 dark:text-green-200">Active Tests</span>
-                    <span className="text-lg font-bold text-green-600 dark:text-green-400">12</span>
-                  </div>
-                </div>
-                <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 p-3 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-blue-800 dark:text-blue-200">Students Online</span>
-                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">48</span>
-                  </div>
-                </div>
-                <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 p-3 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-purple-800 dark:text-purple-200">Violations</span>
-                    <span className="text-lg font-bold text-purple-600 dark:text-purple-400">3</span>
-                  </div>
-                </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{user.name || 'Educator'}</p>
+                <p className="text-[11px] text-gray-500 truncate">{user.email}</p>
               </div>
             </div>
-          </nav>
-        </div>
+          </div>
+        )}
 
-        {/* Footer - Fixed */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex-shrink-0">
-          <div className="bg-gradient-to-r from-green-400/10 to-blue-500/10 rounded-lg p-4">
-            <div className="flex items-center mb-2">
-              <Shield className="w-5 h-5 text-green-400 mr-2" />
-              <span className="font-semibold text-gray-900 dark:text-white">AI Proctoring</span>
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto px-3 py-5 space-y-7">
+          {menuItems.map((section, idx) => (
+            <div key={idx}>
+              <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2 px-3">
+                {section.category}
+              </p>
+              <div className="space-y-0.5">
+                {section.items.map((item, i) => {
+                  if (item.auth && !user) return null;
+                  const Icon = item.icon;
+                  const c = colorMap[item.color] || colorMap.gray;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => handleItemClick(item.path)}
+                      className="group flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all duration-150"
+                    >
+                      <div className={`w-8 h-8 rounded-lg ${c.bg} ${c.hover} flex items-center justify-center flex-shrink-0 transition-colors`}>
+                        <Icon className={`w-4 h-4 ${c.icon}`} />
+                      </div>
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-              Advanced monitoring active for all tests
-            </p>
+          ))}
+        </nav>
+
+        {/* Footer — AI Proctoring status, no fake numbers */}
+        <div className="px-4 pb-5 flex-shrink-0">
+          <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-4 py-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2"></div>
-                <span className="text-xs text-green-400 font-medium">Online</span>
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm font-semibold text-white">AI Proctoring</span>
               </div>
-              <span className="text-xs text-gray-500">v2.1.0</span>
+              <span className="text-[10px] text-gray-600">v2.1.0</span>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-emerald-400 font-medium">Active</span>
             </div>
           </div>
         </div>

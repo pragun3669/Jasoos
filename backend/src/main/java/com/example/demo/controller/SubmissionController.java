@@ -26,7 +26,9 @@ public class SubmissionController {
             @RequestParam Long testId,
             @RequestBody SubmissionRequest request,
             @RequestParam Long studentId) {
-
+            
+        System.out.println("🚨 Tab switches received: " + request.getTabSwitchCount());
+        System.out.println("🚨 Copy paste received: " + request.getCopyPasteAttempts());
         Submission s = submissionService.createSubmission(testId, request, studentId);
         // Now runnerClient is called automatically inside the service
         return ResponseEntity.ok(

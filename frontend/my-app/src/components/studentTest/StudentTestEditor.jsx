@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Send, Loader2 } from "lucide-react";
+import { API_URL } from "../../config";
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 import { codeKey }       from "./utils/localStorageUtils";
@@ -39,6 +40,7 @@ const StudentTestEditor = () => {
     proctoringStarted,
     proctoringBackend,
     proctoringEnabled,
+    testLinkToken
   } = location.state || {};
 
   const authToken = user?.token;
@@ -179,8 +181,15 @@ const StudentTestEditor = () => {
 
   const handleRun = useCallback(() => {
     if (!currentQuestion || isRunning) return;
-    runCode(code, "cpp", currentQuestionIndex, currentQuestion.testCases || []);
-  }, [code, currentQuestion, currentQuestionIndex, isRunning, runCode]);
+    runCode(
+      code,
+      "cpp",
+      currentQuestionIndex,
+      currentQuestion.testCases || [],
+      tabSwitchCount,
+      copyPasteAttempts
+    );
+  }, [code, currentQuestion, currentQuestionIndex, isRunning, runCode, tabSwitchCount, copyPasteAttempts]);
 
   // ── Run all questions before final submit ───────────────────────────────────
   const runAllBeforeSubmit = useCallback(async () => {
@@ -192,45 +201,59 @@ const StudentTestEditor = () => {
         saved = localStorage.getItem(codeKey(test._id || test.id, i)) || "";
       } catch { /* ignore */ }
       if (!saved.trim()) continue;
-      await runCode(saved, "cpp", i, q.testCases || []);
+      await runCode(saved, "cpp", i, q.testCases || [],tabSwitchCount, copyPasteAttempts);
     }
-  }, [test, runCode]);
+  }, [test, runCode,tabSwitchCount,
+    copyPasteAttempts]);
 
   // ── Final submit ────────────────────────────────────────────────────────────
   const handleFinalSubmit = useCallback(async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     setShowSubmitModal(false);
-
+  
     try {
       await runAllBeforeSubmit();
-      clearStoredTime();
-      clearStoredCount();
-
-      navigate("/test-complete", {
-        state: {
-          test,
-          student,
-          questionStatuses,
+  
+      console.log("🚨 SUBMITTING:", { tabSwitchCount, copyPasteAttempts });
+      console.log("🔑 test object keys:", Object.keys(test)); // ADD THIS
+    console.log("🔑 full test:", test); // ADD THIS
+    await fetch(`${API_URL}/api/tests/link/${testLinkToken}/submit-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: student.name,
+          email: student.email,
+          batch: student.batch,
+          submittedAt: new Date().toISOString(),
+          testId: test._id || test.id,
           tabSwitchCount,
           copyPasteAttempts,
-        },
+          questionResults: Object.entries(questionStatuses || {}).map(
+            ([questionId, q]) => ({
+              questionId: Number(questionId),
+              correct: q.correct,
+              attempts: q.attempts,
+              output: q.output,
+              results: q.results,
+            })
+          ),
+        }),
+      });
+  
+      clearStoredTime();
+      clearStoredCount();
+  
+      navigate("/test-complete", {
+        state: { test, student, questionStatuses, tabSwitchCount, copyPasteAttempts },
       });
     } catch (err) {
       console.error("Submit error:", err);
       setIsSubmitting(false);
     }
   }, [
-    isSubmitting,
-    runAllBeforeSubmit,
-    clearStoredTime,
-    clearStoredCount,
-    navigate,
-    test,
-    student,
-    questionStatuses,
-    tabSwitchCount,
-    copyPasteAttempts,
+    isSubmitting, runAllBeforeSubmit, clearStoredTime, clearStoredCount,
+    navigate, test, student, questionStatuses, tabSwitchCount, copyPasteAttempts,testLinkToken
   ]);
 
   // Wire the ref so timer/tab hooks always call the latest version

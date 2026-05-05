@@ -63,8 +63,14 @@ public class Submission {
     private Integer score;
     // add below: private Integer score;
 private Double plagiarismScore;   // 0–100 score for code plagiarism
+        
+// ADD these fields below plagiarismScore:
 
+@Column(name = "tab_switch_count")
+private Integer tabSwitchCount = 0;
 
+@Column(name = "copy_paste_attempts")
+private Integer copyPasteAttempts = 0;
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

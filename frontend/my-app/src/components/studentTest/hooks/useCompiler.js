@@ -52,7 +52,9 @@ export default function useCompiler({ test, student, authToken }) {
     code,
     language = "cpp",
     questionIndex,
-    testCases = []
+    testCases = [],
+    tabSwitchCount = 0,
+  copyPasteAttempts = 0
   ) => {
     if (!student) {
       setErrorType("runtime_error");
@@ -92,6 +94,8 @@ export default function useCompiler({ test, student, authToken }) {
             stdin:      "",
             questionId,
             studentId,
+            tabSwitchCount,
+            copyPasteAttempts,
           }),
         }
       );

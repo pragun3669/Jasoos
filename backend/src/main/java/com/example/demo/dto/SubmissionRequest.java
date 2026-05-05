@@ -15,4 +15,6 @@ public class SubmissionRequest {
     private Integer timeLimitMs;
     private Long questionId;
     private Long studentId;
+    private Integer tabSwitchCount;
+    private Integer copyPasteAttempts;
 }

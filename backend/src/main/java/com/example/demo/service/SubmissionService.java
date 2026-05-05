@@ -61,6 +61,14 @@ public class SubmissionService {
         submission.setStdin(request.getStdin());
         submission.setStatus("PENDING");
 
+        submission.setTabSwitchCount(
+            request.getTabSwitchCount() != null ? request.getTabSwitchCount() : 0
+        );
+
+        submission.setCopyPasteAttempts(
+            request.getCopyPasteAttempts() != null ? request.getCopyPasteAttempts() : 0
+        );
+
         Submission saved = submissionRepository.save(submission);
         sendToRunner(saved);
 

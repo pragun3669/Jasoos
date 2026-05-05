@@ -195,8 +195,8 @@ const TestComplete = () => {
           </p>
         </div>
       </div>
-
-      <style jsx>{`
+      
+      <style>{`
         @keyframes fall {
           to {
             transform: translateY(100vh) rotate(360deg);

@@ -3,26 +3,6 @@ import { Editor } from "@monaco-editor/react";
 import { Play, RotateCcw, Loader2 } from "lucide-react";
 import { getDefaultCode } from "../utils/codeTemplates";
 
-/**
- * CodeEditorPanel
- *
- * Fixes:
- *  1. Default template appears immediately on first load (no refresh needed)
- *     — editor stays in "loading" state until code is non-null, then mounts
- *       with the correct value rather than "" then a later setValue call
- *  2. Code persists on reload — handled by useQuestionState's localStorage,
- *     but this component also guards against mounting with stale empty string
- *
- * Props:
- *  code            string   — current code (from useQuestionState)
- *  setCode         fn
- *  language        string   — e.g. "cpp"
- *  onRun           fn
- *  onReset         fn       — optional override; defaults to getDefaultCode(language)
- *  isRunning       boolean
- *  isTransitioning boolean  — fades editor during question switch
- *  editorTheme     string   — monaco theme string
- */
 const CodeEditorPanel = ({
   code,
   setCode,

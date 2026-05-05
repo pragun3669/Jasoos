@@ -211,8 +211,13 @@ const TeacherTestResultsPage = () => {
           ...result,
           score:             parseFloat(Math.min(100, totalScore).toFixed(1)),
           totalMarks:        100,
-          tabSwitchCount:    result.tabSwitchCount    ?? 0,
-          copyPasteAttempts: result.copyPasteAttempts ?? 0,
+          tabSwitchCount: result.tabSwitchCount 
+          ?? result.submission?.tabSwitchCount 
+          ?? 0,
+
+          copyPasteAttempts: result.copyPasteAttempts 
+            ?? result.submission?.copyPasteAttempts 
+            ?? 0,
           questionResults:   processedQuestionResults
         };
       });

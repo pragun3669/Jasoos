@@ -104,7 +104,7 @@ export default function useProctoring({
 
     const vw = video.videoWidth  || video.clientWidth  || 640;
     const vh = video.videoHeight || video.clientHeight || 480;
-
+    if (!vw || !vh) return; 
     if (canvas.width !== vw || canvas.height !== vh) {
       canvas.width  = vw;
       canvas.height = vh;
@@ -245,6 +245,7 @@ export default function useProctoring({
   // RAF draw loop — decoupled from FaceMesh cadence for smooth rendering
   const startDrawLoop = useCallback(() => {
     const loop = () => {
+      if (!canvasRef.current || !videoRef.current) return;
       drawOverlay();
       animFrameRef.current = requestAnimationFrame(loop);
     };

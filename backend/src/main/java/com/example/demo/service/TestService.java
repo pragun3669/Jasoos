@@ -285,8 +285,13 @@ public class TestService {
                 dto.getSubmittedAt() != null
                         ? dto.getSubmittedAt()
                         : LocalDateTime.now());
-        student.setTabSwitchCount(dto.getTabSwitchCount());
-        student.setCopyPasteAttempts(dto.getCopyPasteAttempts());
+        student.setTabSwitchCount(
+    dto.getTabSwitchCount() != null ? dto.getTabSwitchCount() : 0
+);
+
+student.setCopyPasteAttempts(
+    dto.getCopyPasteAttempts() != null ? dto.getCopyPasteAttempts() : 0
+);
         student.setScore(scoreCalculationService
                 .calculateScoreWithPenalties(dto,
                         test.getQuestions().size()));
@@ -334,8 +339,8 @@ public class TestService {
             dto.setStatus(student.getSubmittedAt() != null ? "Submitted" : "Not Attempted");
             dto.setSubmittedAt(student.getSubmittedAt());
             dto.setTotalMarks(totalMarks);
-            dto.setTabSwitchCount(student.getTabSwitchCount());
-            dto.setCopyPasteAttempts(student.getCopyPasteAttempts());
+            dto.setTabSwitchCount(student.getTabSwitchCount() != null ? student.getTabSwitchCount() : 0);
+            dto.setCopyPasteAttempts(student.getCopyPasteAttempts() != null ? student.getCopyPasteAttempts() : 0);
 
             List<Submission> mySubmissions =
                     subsByStudent.getOrDefault(student.getId(), List.of());
