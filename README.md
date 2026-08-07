@@ -150,49 +150,12 @@ Teachers can access:
 - Plagiarism reports
 
 ---
+## 🎥 Project Demo
 
-# 🖼️ Screenshots
+https://github.com/user-attachments/assets/b49f0ca2-ec2f-4aa5-8e5f-509199996375
 
-## Landing Page
 
-![Landing](screenshots/home.png)
-
----
-
-## Teacher Login
-
-![Login](screenshots/login.png)
-
----
-
-## AI Question Generator
-
-![Generator](screenshots/generator.png)
-
----
-
-## Create Coding Test
-
-![Create Test](screenshots/create-test.png)
-
----
-
-## Student Coding IDE
-
-![IDE](screenshots/student-ide.png)
-
----
-
-## Results Dashboard
-
-![Results](screenshots/results.png)
-
----
-
-## Plagiarism Dashboard
-
-![Plagiarism](screenshots/plagiarism.png)
-
+> Click the button above to watch the full demonstration of JASOOS.
 ---
 
 # 🏗️ System Architecture
